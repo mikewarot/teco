@@ -1,0 +1,1116 @@
+Program Teco;
+{$X+,N-,E-,I+,R+,S+,G-}
+{ $ X+,N-,E-,I-,R-,S-,G-}
+{
+  The Last remake of TECO, a nice editor....
+
+  Copyright (C) 1989-1991 Michael Warot, all rights reserved.
+  Distribution of this SOURCE CODE is strickly prohibited.
+
+  Disclaimer: The author makes no warantee, expressed or implied.
+            Use this software strickly at your own risk.
+
+  "Back when I was 25, we didn't have any fancy windows and mice...
+  AND WE LIKED IT THAT WAY!", yeah, SSSSSUUUURRRRREEEEE....
+
+  Rev
+   4 - Add command input routine, begin implementing a simple
+       command interpreter
+   5 - Implement string parameters
+   6 - Implement number parameters and a small (10) stack
+   7 - Implement a simple form of numeric expressions
+   8 - Procedure Execute added, to allow commands to come from multiple
+       sources, and allow the "current" buffer to be one of many.
+       Add LineOriented()
+   9 - Move TBuffer and Tstack out to separate units
+       Add ExecStr()
+  10 - More debugging....
+  11 - File oriented I/O, buffers, etc.
+  12 - Remove ExecStr()
+       Make all q-registers general purpose.... (You're right, Ken)
+       procedures use pointers instead of VAR parameters
+  13 - Add search and replace. (Pattern matching supported, but slow).
+
+ 1/21/91 - MAW
+  14 - Write first draft of TECO.DOC, revise code to more closely match
+       definitions in DEC's manual.
+
+ 1/21/91 - MAW - Big problem, because of the interpretive nature of the
+               current implementation, conditional branching looks to be
+               a real problem. Considering "compiling" commands, which
+               would eliminate most semantic ambiguities, in addition
+               to increasing the speed of operations.
+
+
+ Varsion 100 - experimental, compiling version. (NOT COMPILING!)
+
+  Notes: Flag "C" and 1 is the Case Sensitive flag, default off (0)
+         Flag "T" and 8 is the NO ECHO flags, default off (echo keys)
+
+ 7/17/91 - Replace all tbuffer references with tbuf, to allow for file I/O.
+           A simple search/replace command actually works now!
+           First release to the public
+
+ 7/22/91 - Correct bug in GetConstant which pushed junk on the stack
+         - Correct logic fault, never allow GetStringParam to be inside
+           a conditional if an argument is REQUIRED, if the procedure isn't
+           called, the argument becomes part of the command, not just
+           another parameter!   Append is the one exception to this rule.
+ 7/23/91 - Fix bug in Search, wouldn't find a match at the current cursor
+           position.
+
+ 7/25/91 - Fix bug (feature?) which caused EX in a .INI file to be ignored
+         - Add StringSearch, a MUCH faster engine for searching through
+           the buffer. Supports most of the "String Build" characters
+
+1.03á--- release?
+
+12/03/91 - Modify code to use Release(QStack.Pop,Done) to eliminate bug
+           which eats memory. Old version didn't properly page text...
+
+           Modify ExitLoop to pass F> in a command
+
+}
+Uses
+  Stacks,
+  Buff,
+  DOS;
+Const
+  ESC = #27;
+  CrLf           : Array[0..1] of Char = #13#10;
+  Version        = '1.06á';
+  ProgName       = 'TECO/2';
+
+  DefaultSize    = 1000;
+
+(******** Misc routines *******)
+Type
+  KeyStroke = Record
+                ascii  : char;
+                stroke : byte;
+              End;
+Const
+  NullKey   : KeyStroke = (ascii:#0;stroke:0);
+
+Function GetKey     : Word; Assembler;
+Asm
+  xor    ax,ax      { Keyboard int, get key }
+  int    $16
+End;
+
+Function KeyPressed : Boolean; Assembler;
+Asm
+  mov    ax,1
+  int    $16        { Keyboard int, get status }
+  mov    ax,0       { Zero flag set = no key   }
+  jz     @@1
+  inc    ax
+@@1:                { 1 if key ready, 0 if not }
+End;
+
+Function Qnum(X : Char):Byte;
+Const
+  Qxlat : Array[0..127] of Byte =
+    ( 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,
+      0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,
+      0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0,37, 0,
+      1, 2, 3, 4,  5, 6, 7, 8,  9,10, 0, 0,  0, 0, 0, 0,
+      0,11,12,13, 14,15,16,17, 18,19,20,21, 22,23,24,25,
+     26,27,28,29, 30,31,32,33, 34,35,36, 0,  0, 0, 0, 0,
+      0,11,12,13, 14,15,16,17, 18,19,20,21, 22,23,24,25,
+     26,27,28,29, 30,31,32,33, 34,35,36, 0,  0, 0, 0, 0);
+
+begin
+  Asm
+         push  bx
+         mov   al,X
+         cbw                 { ax is now $0000..$007f  OR   $ff80..$ffff }
+         xor   ah,$ff        { ax is now $ff00..$ff7f  OR   $0080..$00ff }
+         and   al,ah         { ax is now $ff00..$ff7f  OR   $0000..$0000 }
+         xor   ah,ah         { ax is now $0000..$007f  OR   $0000..$0000 }
+         lea   bx,Qxlat
+         xlat
+         pop   bx
+         mov   @result,al
+  End;
+End;
+
+(******** Global variables *********)
+Var
+  Stack,
+  LoopStack  : LStack;
+
+  QStack  : OStack;
+  Done    : Boolean;
+  Flags   : Array[0..37] of Longint;
+  Qregs   : Array[0..37] of PBuf;       { Q registers }
+  Qnums   : Array[0..37] of Longint;    { Q registers, numeric part }
+  BitMask : Array[0..255] of Longint;   { Used in StringSearch }
+
+  function CmdChar(cmd : pbuf):Char;
+  var
+    c : char;
+  begin
+    c := cmd^.ThisChar; cmd^.Move(+1);
+    if c = '^' then
+    begin
+      c := cmd^.ThisChar; cmd^.Move(+1);
+      c := Char(Lo(Ord(UpCase(C))-$40));
+    end;
+    CmdChar := C;
+  end;
+
+Function StringCompare(P1,P2 : Pointer):Longint;
+{
+  Checks for pattern p1 in p2
+}
+Var
+  Data,
+  Pattern   : pbuf;
+  Old1,Old2 : TextPtr;
+  CaseSensitive : Boolean;
+  c         : char;
+  Match     : Boolean;
+  Size      : Longint;
+Begin
+  Pattern := pbuf(P1);
+  Data    := pbuf(P2);
+  CaseSensitive := (Flags[13] AND 1) <> 0;
+  Match := True;
+  Old1  := Pattern^.WhereAt;
+  Old2  := Data^.WhereAt;
+  While (NOT Pattern^.AtEnd) And Match do
+    If (NOT Data^.AtEnd) then
+    begin
+      c := CmdChar(Pattern);
+      Case c of
+        ^X   : Data^.Move(+1);           { Match ANYTHING }
+      else
+        If CaseSensitive then
+        begin
+          If c = Data^.ThisChar then Data^.Move(+1)
+                                else Match := False;
+        end
+        else
+        begin
+          If UpCase(c) =
+             UpCase(Data^.ThisChar) then Data^.Move(+1)
+                                    else Match := False;
+        end; { if caseSensitive }
+      end; { case c }
+    end
+    else
+      Match := False;
+
+  if match then Size := Data^.WhereAt - Old2
+           else Size := 0;
+
+  Pattern^.JumpTo(Old1);       { Put the pointers back }
+  Data^.JumpTo(Old2);
+  StringCompare := Size;
+End;
+
+
+
+
+Function StringSearch(Pattern,Data : PBuf):Longint;
+{
+  A new, faster search engine.
+  ONLY GOES 31 characters!
+}
+Var
+  EndMask       : Longint;
+  X             : Longint;
+  CaseSensitive : Boolean;
+
+
+  procedure do_add;
+  var
+    c : char;
+
+  procedure add_char(ch : char);
+  var
+    j   : byte;
+    y   : longint;
+    ext : char;
+  begin
+    case ch of
+      ^Q      : begin                                { literal next char }
+                  ext := Pattern^.ThisChar;
+                  Pattern^.Move(+1);
+                  BitMask[Ord(ext)] := BitMask[Ord(ext)] OR X;
+                end;
+      ^X      : for j := 0 to 255 do                 { any character }
+                  BitMask[j] := BitMask[j] OR X;
+      ^S      : begin                                { separators    }
+                  for j :=   0 to  47 do
+                    BitMask[j] := BitMask[j] OR X;
+                  for j :=  58 to  64 do
+                    BitMask[j] := BitMask[j] OR X;
+                  for j :=  91 to  96 do
+                    BitMask[j] := BitMask[j] OR X;
+                  for j := 123 to 255 do
+                    BitMask[j] := BitMask[j] OR X;
+                end;
+      ^N      : begin                                { NOT anything }
+                  y := x;
+                  do_add;
+                  for j := 0 to 255 do
+                    BitMask[j] := BitMask[j] XOR Y;
+                end;
+      ^E      : begin
+                  ext := CmdChar(Pattern);
+                  case upcase(ext) of
+                    'A' : begin                              { Alpha }
+                            for j :=  65 to  90 do
+                              BitMask[j] := BitMask[j] OR X;
+                            for j :=  97 to 122 do
+                              BitMask[j] := BitMask[j] OR X;
+                          end;
+                    'B' : begin                              { separators }
+                            for j :=   0 to  47 do
+                              BitMask[j] := BitMask[j] OR X;
+                            for j :=  58 to  64 do
+                              BitMask[j] := BitMask[j] OR X;
+                            for j :=  91 to  96 do
+                              BitMask[j] := BitMask[j] OR X;
+                            for j := 123 to 255 do
+                              BitMask[j] := BitMask[j] OR X;
+                          end;
+                    'D' : for j := 48 to 57 do               { Digits }
+                            BitMask[j] := BitMask[j] OR X;
+                    'R' : begin
+                            for j := 48 to 57 do             { Digits+Alpha }
+                              BitMask[j] := BitMask[j] OR X;
+                            for j :=  65 to  90 do
+                              BitMask[j] := BitMask[j] OR X;
+                            for j :=  97 to 122 do
+                              BitMask[j] := BitMask[j] OR X;
+                          end;
+                    '[' : begin
+                            ext := CmdChar(Pattern);
+                            while (ext <> ']') and
+                                  (NOT Pattern^.AtEnd) do
+                            begin
+                              BitMask[ord(ext)] := BitMask[ord(ext)] OR X;
+                              ext := CmdChar(Pattern);
+                            end;
+                          end;
+
+                  end; { Case }
+                end; { ^E }
+
+      'A'..'Z',
+      'a'..'z': begin
+                  BitMask[ord(ch)] := BitMask[ord(ch)] OR X;
+                  If NOT CaseSensitive then
+                    BitMask[ord(ch) XOR $20] :=
+                    BitMask[ord(ch) XOR $20] OR X;
+                end;
+
+    else
+      BitMask[ord(ch)] := BitMask[ord(ch)] OR X;
+    end; { case }
+  end;
+
+  begin
+    c := CmdChar(Pattern);
+    add_char(c);
+  end;
+
+
+Var
+  i,j,count : Byte;
+  OldData   : TextPtr;
+  left      : longint;
+  c         : Char;
+Begin
+  FillChar(BitMask,SizeOf(BitMask),#0);
+  EndMask := -1;
+  OldData := Data^.WhereAt;
+  CaseSensitive := (Flags[13] AND 1) <> 0;
+  I := 0;
+  X := 1;
+  Count := 0;
+  While (NOT Pattern^.AtEnd) AND (I < 31) do
+  begin
+    Do_Add;
+    X := X shl 1;
+    EndMask := EndMask shl 1;
+    Inc(Count);
+  end;
+
+  X := 0;
+  Left := Data^.EndPtr - Data^.WhereAt;
+  If Left > 0 then
+  repeat
+    X := X OR 1;
+    X := (X AND BitMask[Ord(Data^.ThisChar)]) SHL 1;
+    Data^.Move(+1);
+    Dec(Left);
+  until (Left<=0) OR ( (X and EndMask) <> 0);
+
+  if (X and EndMask <> 0) then
+  begin
+    StringSearch := Count;
+  end
+  else
+  begin
+    Data^.JumpTo(OldData);
+    StringSearch := 0;
+  end;
+End;
+
+Procedure Compile_And_Execute(Var Cmd, Data : pbuf);
+Begin
+End;
+
+
+
+Procedure Execute(Var Cmd, Data : pbuf);
+Var
+  Delim       : Char;        { #0 if '@' prefix used }
+  ColonPrefix : Boolean;
+
+  procedure ReInit;
+  begin
+    Stack.Clear;
+    Delim := Esc;
+  end;
+
+(******** Numeric routines **********)
+
+  Function GetConstant : Longint;
+  Var
+    T : Longint;
+  Begin
+    T := 0;
+    Case UpCase(Cmd^.ThisChar) of
+      'B'      : begin
+                   Cmd^.move(+1);
+                   t := 0;
+                 end;
+      'Z'      : begin
+                   Cmd^.move(+1);
+                   t := Data^.endptr;
+                 end;
+      '.'      : begin
+                   Cmd^.move(+1);
+                   T := Data^.WhereAt;
+                 end;
+      'H'      : begin
+                   Cmd^.move(+1);
+                   stack.push(0);
+                   T := Data^.EndPtr;
+                 end;
+      '0'..'9' : While (Cmd^.ThisChar in ['0'..'9']) do
+                 begin
+                   t := t * 10 + (ord(Cmd^.ThisChar)-ord('0'));
+                   Cmd^.Move(+1);
+                 end;
+    end;
+    GetConstant := T;
+  End;
+
+  Function ValidNumber(Var B : pbuf) : Boolean;
+  var
+    ok : boolean;
+    t  : longint;
+    c  : char;
+    p  : textptr;
+  begin
+    Ok := True;
+    t := 0;
+    c := Cmd^.thischar;
+    case c of
+      '-'      : begin
+                   cmd^.move(+1);
+                   p := cmd^.WhereAt;
+                   t := GetConstant;
+                   if (p <> cmd^.WhereAt) then t := -t
+                                         else t := -1;
+                   if Not Stack.Empty then
+                     t := Stack.Pop-t;
+                 end;
+      '+'      : begin
+                   cmd^.move(+1);
+                   t := GetConstant;
+                   if Not Stack.Empty then
+                     t := Stack.Pop+t;
+                 end;
+      '*'      : begin
+                   cmd^.move(+1);
+                   t := GetConstant;
+                   if Not Stack.Empty then
+                     t := Stack.Pop * t;
+                 end;
+      '/'      : begin
+                   cmd^.move(+1);
+                   t := GetConstant;
+                   if t <> 0 then
+                     if Not Stack.Empty then
+                       t := Stack.Pop div t;
+                 end;
+      '&'      : begin
+                   cmd^.move(+1);
+                   t := GetConstant;
+                   if Not Stack.Empty then
+                     t := Stack.Pop AND t;
+                 end;
+      '#'      : begin
+                   cmd^.move(+1);
+                   t := GetConstant;
+                   if Not Stack.Empty then
+                     t := Stack.Pop OR t;
+                 end;
+    else
+      p := cmd^.WhereAt;
+      t := GetConstant;
+      ok := p <> cmd^.WhereAt;            { If current moved, it's a vaild num }
+    end;
+
+    If Ok then Stack.Push(t);
+
+    ValidNumber := Ok;
+  end;
+
+(******** String parameter routines **********)
+
+  Function GetStringParam(Var B : pbuf;
+                          Var P : Pointer;
+                          Var S : Word        ) : Boolean;
+  Var
+    Ok : Boolean;
+  Begin
+    If Delim = #0 then
+    begin
+      Delim := cmd^.ThisChar;
+      cmd^.Move(+1);
+    end;
+    P     := cmd^.ThisCharP;    { Pointer to buffer }
+    S     := cmd^.WhereAt;      { Current char # }
+    While (NOT Cmd^.AtEnd) AND (cmd^.ThisChar <> Delim) do
+      cmd^.Move(+1);
+    If cmd^.ThisChar = Delim then
+    begin
+      S  := (cmd^.WhereAt - S);
+      Ok := True;
+      cmd^.Move(+1);
+    end
+    else
+      Ok := False;
+    GetStringParam := Ok;
+  End;
+
+  procedure LineOriented(Var I,J : Longint);
+  var
+    k : longint;
+  begin
+    If Stack.Count >= 2 then
+    begin
+      j := stack.pop;
+      i := stack.pop;
+    end
+    else
+    begin
+      if Stack.Empty then k := 1
+                     else k := stack.pop;
+      i := Data^.PlusLine(0);
+      j := Data^.PlusLine(k);
+    end;
+  end; { LineOriented }
+
+  procedure InsertMacro(Var Dest : pbuf);
+  var
+    x : char;
+    p1 : pointer;
+    s1 : word;
+  begin
+    If ColonPrefix then                    { Append }
+      Dest^.JumpTo(Dest^.EndPtr);
+    If Stack.Empty then
+    begin                                  { String insert }
+      If GetStringParam(Cmd,P1,S1) then
+        Dest^.Insert(P1^,S1);
+    end
+    else
+    begin                                  { Insert ASCII }
+      x := char(Stack.Pop);
+      Dest^.Insert(X,1);
+    end;
+  end;
+
+  function Qregister: pbuf;
+  var
+    c : integer;
+  begin
+    c := Qnum(cmd^.ThisChar); cmd^.Move(+1);
+    if qregs[c] = nil then qregs[c] := new(PBuf,Init(DefaultSize));
+    Qregister := Qregs[c];
+  end;
+
+
+  { scans forward for the end of a loop }
+  procedure exitloop(out : boolean);
+  var
+    lastchar : char;
+  begin
+    lastchar := #0;
+    while (NOT cmd^.AtEnd) AND
+          ((cmd^.thischar <> '>') OR (lastchar = 'F')) do
+    begin
+      lastchar := Upcase(cmd^.thischar);
+      cmd^.move(+1);
+    end;
+
+    if cmd^.thischar <> '>' then
+      error('loop missing ending ">"!')
+    else
+      if out then cmd^.move(+1);                    { Mod for skip to > }
+  end;
+
+  { returns true if inside a loop, else errors, and returns false }
+  function  inloop:boolean;
+  begin
+    If LoopStack.Empty then
+    begin
+      Error('not in a loop!');
+      inloop := false;
+    end
+    else
+      inloop := true;
+  end;
+
+  procedure gotoelse;
+  var
+    lastchar : char;
+  begin
+    lastchar := #0;
+    while (NOT cmd^.AtEnd) AND
+          ( ((cmd^.thischar <> '|') AND (cmd^.thischar <> '''') )
+            OR (lastchar = 'F')) do
+    begin
+      lastchar := Upcase(cmd^.thischar);
+      cmd^.move(+1);
+    end;
+
+    if (cmd^.thischar <> '|') AND (cmd^.thischar <> '''') then
+      error('loop missing ending ">"!')
+    else
+      cmd^.move(+1);
+  end;
+
+  procedure gotoend;
+  var
+    lastchar : char;
+  begin
+    lastchar := #0;
+    while (NOT cmd^.AtEnd) AND
+          ((cmd^.thischar <> '''') OR (lastchar = 'F')) do
+    begin
+      lastchar := Upcase(cmd^.thischar);
+      cmd^.move(+1);
+    end;
+
+    if cmd^.thischar <> '''' then
+      error('loop missing ending "''"!')
+    else
+      cmd^.move(+1);
+  end;
+
+Var
+  C,X   : Char;
+  I,J,K : Longint;
+  P1,P2 : Pointer;
+  S1,S2 : Word;
+  S     : String;
+  Q     : pbuf;
+begin
+  cmd^.JumpTo(0);
+  ReInit;
+
+  While Not Cmd^.AtEnd do
+  begin
+    While ValidNumber(Cmd) do { nothing };
+    ColonPrefix := False;
+    Delim       := Esc;
+
+    While cmd^.ThisChar in ['@',':'] do
+    begin
+      Case cmd^.ThisChar of
+        '@'  : Delim := #0;
+        ':'  : ColonPrefix := True;
+      End;
+      cmd^.Move(+1);
+    end;
+
+    C := CmdChar(Cmd);
+    Case UpCase(C) of
+{ Misc }
+      #13,#10,
+      ' ',','   : { Nothing };
+
+      '='       : WriteLn(Stack.Pop);
+
+{ Cursor Movement }
+      'C'       : If Stack.Empty then Data^.Move(+1)
+                                 else Data^.Move(Stack.Pop);
+
+      'R'       : If Stack.Empty then Data^.Move(-1)
+                                 else Data^.Move(-Stack.Pop);
+
+      'J'       : If Not Stack.Empty then Data^.JumpTo(Stack.Pop);
+
+      'L'       : If Not Stack.Empty then
+                    Data^.JumpTo(Data^.PlusLine(Stack.Pop))
+                  else
+                    Data^.JumpTo(Data^.PlusLine(1));
+{ Display }
+      'T'       : begin
+                    LineOriented(i,j);
+                    If (i < j) then Data^.Show(i,j)
+                               else Data^.Show(j,i);
+                  end;
+
+      'V'       : begin
+                    if Stack.Empty then k := 1
+                                   else k := Abs(Stack.Pop);
+                    i := Data^.PlusLine(-k);
+                    j := Data^.PlusLine( k);
+                    Data^.Show(i,j);
+                  end;
+{ Insertion }
+      'I'       : InsertMacro(Data);
+
+{ Deletion }
+      'D'       : If Stack.Empty then Data^.Delete(1)
+                                 else Data^.Delete(Stack.Pop);
+      'K'       : begin
+                    LineOriented(i,j);
+                    Data^.JumpTo(i);
+                    Data^.Delete(j-i);
+                  end;
+
+{ Search and Replace }
+      'N'       : begin
+                    j := Data^.WhereAt;
+                    if stack.Empty then k := 1
+                                   else k := Stack.Pop;
+                    If GetStringParam(Cmd,P1,S1) then
+                    begin
+                      QStack.Push(New(pbuffer,Cpy(P1,S1)));
+                       Stack.Push( StringSearch(Pbuf(Qstack.Top),Data) );
+                      Dispose(QStack.Pop,Done);
+                    end;
+                  end;
+
+      'S'       : Begin
+                    j := Data^.WhereAt;
+                    if stack.Empty then k := 1
+                                   else k := Stack.Pop;
+                    If GetStringParam(Cmd,P1,S1) then
+                    begin
+                      QStack.Push(New(pbuffer,Cpy(P1,S1)));
+
+                      While (k > 0) AND (Not Data^.AtEnd) do
+                      begin
+                        i := StringCompare(QStack.Top,Data);
+                        if (i <> 0) then
+                        begin
+                          dec(k);
+                          Data^.Move(pbuf(QStack.Top)^.EndPtr); {AFTER match}
+                        end
+                        else
+                          Data^.Move(+1);
+                      end;
+
+                      While (k < 0) AND (NOT Data^.AtEnd) do
+                      begin
+                        i := StringCompare(QStack.Top,Data);
+                        if (i <> 0) then inc(k);
+                        if k <> 0 then
+                          Data^.Move(-1)
+                        else
+                          Data^.Move(pbuf(QStack.Top)^.EndPtr); {AFTER match}
+                      end;
+
+                      Dispose(QStack.Pop,Done);
+                    end;
+
+                    If (k = 0) then
+                      Stack.Push(i)
+                    else
+                    begin
+                      Stack.Push( 0);
+                      Data^.JumpTo(j);
+                    end;
+                  End;
+
+{ FR must always TAKE the string parameter from the command line, even
+  if it doesn't use it, otherwise the string becomes a TECO command, and
+  disaster ensues.   Bug fixed 7/22/91 MAW
+
+  7/23/91 Now returns size of text that would have been inserted,
+          if no match preceded, for use with ; and :; commands
+}
+      'F'       : Begin
+                    X := cmd^.ThisChar;
+                    cmd^.Move(+1);
+                    Case UpCase(X) of                      { Replace match }
+                      'R'  : begin
+                               If Stack.Empty then k := 0
+                                              else k := Stack.Pop;
+                               If GetStringParam(Cmd,P1,S1) then
+                               begin
+                                 if (k <> 0) then
+                                 begin
+                                   Data^.Delete(-k);
+                                   Data^.Insert(P1^,S1);
+                                 end
+                                 else
+                                   Stack.Push(S1);
+                               end;
+                             end;
+                      '|'  : GotoElse;                     { Skip to | or ' }
+                      '''' : GotoEnd;                      { Skip to ' }
+                      '>'  : ExitLoop(False);              { Skip to > }
+                    End;
+                  End;
+
+{ Extended commands }
+      'E'       : Begin
+                    X := cmd^.ThisChar;
+                    cmd^.Move(+1);
+                    Case UpCase(X) of
+                      'B'  : if GetStringParam(Cmd,P1,S1) then
+                             begin
+                               S[0] := Char(s1);
+                               System.Move(P1^,S[1],S1);
+                               Data^.AssignRead(S);
+                               Data^.AssignWrite(S);
+                             end;
+                      'C'  : begin     { close the current buffer }
+                               Data^.Done;
+                               Data := New(PBuf,Init(DefaultSize));
+                             end;
+
+                      'Q'  : begin
+                               q := Qregister;
+                               if GetStringParam(Cmd,P1,S1) then
+                               begin
+                                 S[0] := Char(s1);
+                                 System.Move(P1^,S[1],S1);
+                                 Q^.AssignRead(S);
+                               end;
+                             end;
+
+                      'R'  : if GetStringParam(Cmd,P1,S1) then
+                             begin
+                               S[0] := Char(s1);
+                               System.Move(P1^,S[1],S1);
+                               Data^.AssignRead(S);
+                             end;
+                      'T'  : Data^.Dump;
+                      'W'  : if GetStringParam(Cmd,P1,S1) then
+                             begin
+                               S[0] := Char(s1);
+                               System.Move(P1^,S[1],S1);
+                               Data^.AssignWrite(S);
+                             end;
+                      'X'  : Done := True;
+                      '!'  : Compile_And_Execute(Cmd,Data);
+                    else
+                      k := qnum(X);
+                      if Stack.Empty then Stack.Push(Flags[k])
+                                     else Flags[k] := Stack.Pop;
+                    End;
+                  End;
+
+      'U'       : Begin
+                    X := cmd^.ThisChar;
+                    cmd^.Move(+1);
+                    k := qnum(X);
+                    if Stack.Empty then Stack.Push(Flags[k])
+                                   else Flags[k] := Stack.Pop;
+                  End;
+
+      'A'       : Data^.ReadPage;
+      'P'       : Data^.WritePage;
+      'Y'       : Begin
+                    Data^.WritePage;
+                    Data^.ReadPage;
+                  End;
+
+(******* Q-register commands... *******)
+      ^U        : begin
+                    q := Qregister;
+                    if q <> nil then
+                      InsertMacro(Q);
+                  end;
+
+      'G'       : begin
+                    q := Qregister;
+                    if q <> nil then
+                      if ColonPrefix then
+                        Q^.Show(0,Q^.EndPtr)
+                      else
+                      begin
+                        k := Q^.WhereAt;
+                        Q^.JumpTo(0);
+                        Data^.Insert(Q^.ThisCharP^,Q^.EndPtr);
+                        Q^.JumpTo(k);
+                      end;
+                  end;
+
+      'Q'       : begin
+                    q := Qregister;
+                    if ColonPrefix then
+                      Stack.Push(q^.EndPtr)
+                    else
+                    begin
+                      if stack.empty then stack.Push(Q^.Number)
+                      else
+                      begin
+                        k := stack.pop;
+                        if (k < 0) or (k >= q^.EndPtr) then
+                          Stack.push(-1)
+                        else
+                          Stack.Push(Longint(Q^.Ascii(k)));
+                      end;
+                    end;
+                  end;
+
+      'X'       : begin
+                    q := Qregister;
+                    LineOriented(i,j);
+                    If (i > j) then
+                    begin
+                      k := i;
+                      i := j;
+                      j := k;
+                    end;
+                    k := Data^.WhereAt;
+                    Data^.JumpTo(i);
+                    If Q <> nil then
+                    begin
+                      if ColonPrefix then q^.JumpTo(q^.EndPtr)
+                                     else q^.Clear;
+                      Q^.Insert(Data^.ThisCharP^,j-i);
+                    end;
+                    Data^.JumpTo(k);
+                  end;
+
+      'M'       : begin
+                    q := Qregister;
+                    if q <> nil then
+                      Execute(Q,Data);
+                  end;
+
+(*************** Input, comment, and label commands *******************)
+
+      ^A        : begin
+                    Repeat
+                      X := CmdChar(Cmd);
+                      If X <> ^A then
+                        Write(X);
+                    Until (cmd^.AtEnd) OR (X = ^A);
+                  end;
+
+      ^T        : If Stack.Empty then
+                  begin
+                    k := Lo(GetKey);
+                    Stack.Push(Longint(k));
+                    If (Flags[Qnum('T')] and $08) = 0 then
+                      Write(Char(k));
+                  end
+                  else
+                    Write(Char(Lo(Stack.Pop)));
+
+      '!'       : repeat
+                    X := CmdChar(Cmd);
+                  until (cmd^.AtEnd) OR (X = '!');
+
+  { 7/23/91 modified to support skipping the entire loop if n <= 0 }
+
+      '<'       : begin
+                    If Stack.Empty then i := maxint
+                                   else i := Stack.Pop;
+                    if i > 0 then
+                    begin
+                      LoopStack.Push(i);
+                      LoopStack.Push(Cmd^.WhereAt);
+                    end
+                    else
+                      ExitLoop(True);  { skip the iteration
+                                         if the count is <= 0 }
+                  end;
+
+      '>'       : if InLoop then
+                  begin
+                    I := LoopStack.Pop;
+                    J := LoopStack.Pop;
+                    Dec(J);
+                    If J > 0 then
+                    begin
+                      LoopStack.Push(J);
+                      LoopStack.Push(I);
+                      Cmd^.JumpTo(I);
+                    end;
+                  end;
+
+  { added to allow for a big search and replace inside a loop }
+
+      ';'       : if InLoop then
+                  begin
+                    if stack.empty then i := -1
+                                   else i := stack.pop;
+                    if ColonPrefix then i := -i -1;
+                    if i >= 0 then
+                      ExitLoop(True);
+                  end;
+
+      '"'       : begin
+                    X := cmd^.ThisChar;
+                    cmd^.Move(+1);
+                    i := 0;
+                    if Not Stack.Empty then i := Stack.Pop;
+
+                    Case UpCase(X) of
+      { Ascii    }    'A' : If NOT (Char(Lo(I)) In ['A'..'Z','a'..'z']) then
+                              GotoElse;
+      { Radix 50 }    'C' : WriteLn('Radix 50 NOT Supported!');
+                      'D' : If NOT (Char(Lo(I)) In ['0'..'9']) then
+                              GotoElse;
+      { Equal    }    'E',
+      { False    }    'F',
+      { Unsuccessful} 'U' : If I <> 0 then
+                              GotoElse;
+      { Greater  }    'G' : If I <= 0 then
+                              GotoElse;
+      { Less     }    'L',
+      { Success  }    'S',
+      { True     }    'T' : If I >= 0 then
+                              GotoElse;
+      { Not Zero }    'N' : If I = 0 then
+                              GotoElse;
+                    else
+                      Error('Undefined Conditional!');
+                    End;
+                  end;
+
+      '|'       : gotoend;
+
+      ''''      : begin
+                    ReInit;
+                  end;
+
+      Esc       : begin
+                    If cmd^.ThisChar = Esc then Exit
+                                           else ReInit;
+                  end;
+    Else
+      WriteLn('Undefined command <',C,'>');
+    End;
+  end;
+end; { Execute() }
+
+procedure GetCommand(var cmd : pbuf);
+var
+  C,X,Last  : KeyStroke;
+begin
+  Stack.Clear;
+  LoopStack.Clear;
+  QStack.Clear;
+
+  Word(c) := GetKey;
+  case C.ascii of
+    Esc : Exit;
+  else
+    Cmd^.Clear;
+    Write(C.ascii);
+    Cmd^.Insert(C,1);
+  end;
+
+  Repeat
+    Last := C;
+    Word(C) := GetKey;
+    Case C.ascii of
+      #13       : Begin
+                    WriteLn;
+                    Cmd^.Insert(CrLf,2);
+                  End;
+      Esc       : Begin
+                    Write('$');
+                    Cmd^.Insert(C,1);
+                  End;
+      #8        : If Cmd^.WhereAt <> 0 then
+                  Begin
+                    Cmd^.Delete(-1);
+                    Write(' ',#8,#8,' ',#8);
+                  End;
+    else
+      Write(C.ascii);
+      Cmd^.Insert(C,1);
+    End; { Case C }
+  Until (Last.ascii = Esc) and (C.ascii = Esc);
+end;
+
+Var
+  C,X,Last  : KeyStroke;
+  Current   : Integer;
+  i         : integer;
+  CommandP  : ^String;
+  ExeName,
+  IniName   : PathStr;
+
+  D: DirStr;
+  N: NameStr;
+  E: ExtStr;
+Begin
+  ExeName := ParamStr(0);
+  IniName := 'TECO.INI';
+
+  FSplit(ExeName, D, N, E);
+  if N = '' then
+    N:='TECO';
+  E :='.INI';
+  INIname := D + N + E;
+
+  FillChar(Flags,SizeOf(Flags),#0);
+  FillChar(Qregs,Sizeof(Qregs),#0);
+
+  CommandP := Ptr(PrefixSeg,$80);
+
+  Current   := 0;
+
+  Stack.Init;
+  LoopStack.Init;
+  QStack.Init;
+
+  Qregs[11] := PBuf(New(PBuffer,Cpy(@CommandP^[1],Length(CommandP^)) ) );
+
+  Qregs[37] := New(PBuf,Load(INIname));
+  Qregs[Current] := New(PBuf,Init(DefaultSize));
+
+  Done := False;
+
+  Execute(Qregs[37],Qregs[Current]);
+  While (Qregs[37] <> nil) AND (Qregs[current] <> nil) AND (Not Done) do
+  begin
+    WriteLn;
+    If Qregs[36] <> nil then
+      Execute(Qregs[36],Qregs[Current]);  { Z is now the "Prompt" macro }
+
+    GetCommand(Qregs[37]);
+    WriteLn;
+    Execute(Qregs[37],Qregs[Current]);
+  end;
+
+  For i := 0 to 37 do
+    if Qregs[i] <> nil then
+      Qregs[i]^.Done;
+
+  Stack.Done;
+  LoopStack.Done;
+  QStack.Done;
+End.

@@ -1,0 +1,348 @@
+TECO/2 Implementation Details, etc.
+
+Last Update  : December 4, 1991
+Last Version : 1.06á
+Author       : Michael Warot                  (219) 845-7970
+               7751 Chestnut Ave
+               Hammond, Indiana 46324-3223
+
+Email : chinet!ka9dgx
+        Mike Warot @ dBasics ToolKit (219) 696-3415
+                     The Ward Board  (708) 849-1132
+
+
+ ***************************  LEGAL STUFF *******************************
+
+Copyright (C) 1989-1991 Michael Warot, all rights reserved.
+Permission to use and distribute this program for NON-COMMERCIAL use
+is hereby granted, providing NO FEES are charged, and the package is
+distrubuted complete, without modification.
+
+Disclaimer: The author makes no warantee, expressed or implied.
+            Use this software strickly at your own risk.
+
+ *********************** A Note from the author *************************
+
+I first learned TECO on a PDP-11/70 while at attending college at
+Rose-Hulman in Terre Haute, Indiana. A bit of nostalgia lead my to
+create a version for my own use, primarily as a batch editor.
+
+This is by no means a complete implementation of TECO, which is why it
+is called TECO/2: Half a TECO! It does do the basic functions such as
+paged file handling, search and replace, Qregisters, and the stack.
+It does NOT do all of the string matching or condition expression execution,
+thus it may be limiting to all of the real hackers out there.
+
+
+This command syntax this version supports is derived from the document:
+
+  PDP-11                                   TECO-11.REF
+  TECO User's Guide               -----    TECO REFERENCE LIST
+  Order No. DEC-11-UTECA-B-D     | AND |   by Tom Almy
+  (February, 1980)                -----
+
+  Found in a "trash heap"!                  Found long ago with some
+  @FermiLab                                 11/70 Assembler Source Code
+
+This is only a hobby project for me, I do however, welcome all suggestions
+and feedback (especially bug reports).
+
+Please send a postcard if you actually decide to use this program, to let
+me know I helped someone.
+
+ ***************************** THANKS TO ********************************
+
+   Tom Almy - Who wrote the help file for TEK UNIX TECO, which helped
+              a lot in writing this.
+
+   Those whose shoulders I stand on....
+
+ *********************** Implementation Details *************************
+
+Language: Turbo Pascal 6.0 (source code is available upon request)
+
+TECO is a character oriented, command line interface, text editor. Commands
+are entered at the "* " prompt, backspace deletes the previous character,
+and the escape key (echoed as $) delineates commands, a double escape
+is interpreted as the end of the command line, which then causes the command
+to be executed.
+
+At startup the file TECO.INI is loaded into the . Qregister (the command
+buffer) and executed. The command line is loaded into the A Qregister.
+
+If TECO.EXE is renamed, the INI file read will take the same name as the .EXE
+
+If the Z Qregister is not empty, it is executed before command input is taken,
+as a "prompt" macro.
+
+Qregs:
+  There are 37 Q registers, 0-9,A-Z, and ".", the command buffer.
+
+Flags:
+  UC & 1     - If set, searches become case sensitive
+  UC defaults to 0
+
+  UT & 8     - If set, ^T does not echo keyboard input
+  UT defaults to 0
+
+Execute():
+  This routine takes 2 parameters, both Q-registers. The first is a
+buffer containing the macro to execute, the second is the default buffer
+on which the macro will operate. This is where the real work of the TECO/2
+interpreter takes place.
+
+Immediate Commands:
+  <CR>       - Insert CR/LF pair into command
+  <BS>       - Delete last character of command buffer
+  <ESC><ESC> - Terminate command entry, execute command
+               Note: To enter <ESC><ESC> into the command buffer,
+                     type <ESC><Space><BS><ESC>
+
+  All other characters are appended to the command buffer.
+
+Numeric quantities:
+
+  B  - beginning position of buffer, always zero.
+  Z  - end position of buffer, also count of characters in buffer
+  .  - Current position in the buffer
+  H  - wHole buffer, equivalent to B,Z
+
+  +  - Addition
+  -  - Subtraction
+  *  - Multiplication
+  /  - Integer division (divide by zero trapped)
+  &  - Bitwise AND
+  #  - Bitwise OR
+
+Command list:
+  CR,LF,
+  <Space>
+  <Comma>     - "NOP" commands, ignored during execution
+
+  =           - Pop number from stack, display in decimal,
+                followed by a CR/LF pair
+
+  [n]C        - Move n (1) characters forward in text buffer
+
+  [n]R        - Move n (1) characters backward in text buffer
+
+  nJ          - Jump to position n in buffer, note n is Required.
+
+  [n]L        - Move n (1) lines forward or backward,
+                0L moves to the start of the current line.
+
+  [n|range]T  - type n(1) lines of text, or type range of text.
+
+  [n|range]V  - view n(1) lines of text before and after the cursor,
+                or show range of text
+
+  [:]Itext    - Insert (append) text into current buffer
+
+  [:]nI       - Insert (append) ascii code (n) into current buffer
+
+  [n]D        - Delete n (1) characters forward or backward
+
+  [n|range]K  - delete n (1) lines of text, or delete range of text.
+
+  A           - Append buffer from input file, stupid algorithm
+
+  P           - Put buffer to output file
+
+  Y           - Put the current page, yank in a new one
+
+
+  [n]Stext    - Search n (1) times for text, backward in n < 0.
+                If successful, the pointer is after the matched text,
+                otherwise the cursor is placed at 0.
+                The length of the matched string is left on the stack,
+                for use with the FR command below...
+
+  Ntest       - Search 1 time, in the forward direction for test, the
+                following String Match characers are supported:
+                  ^Q - Interpret the next character literally
+                  ^X - Any character
+                  ^N - Negate the next character
+                  ^E extended
+                    A - Alpha characters
+                    B - Blanks (non-alpha, non-numberic)
+                    D - digits (0-9)
+                    R - alphanumeRic
+                    [ - any of the following characters until ]
+                Case is only significant if the "Case Sensitive" flag is
+                turned ON. { EC bit 1 }
+                The length of the matched string is left on the stack,
+                for use with the FR command below...
+
+  nFRtext     - If n (result from a search) is > 0 then delete
+                'n' characters, replacing it with text.
+
+                  i.e.  Sfoo$FRbar$  ==> search for "foo" and replace
+                                         with "bar"
+                                         does nothing if foo is not found
+                note: returns the number of characters that WOULD have
+                      been inserted if the preceding search has failed
+
+
+  E - Extended Commands
+    EBfilename- Assign the filename for Both reading and writing,
+                read a page into the buffer
+
+    EC        - Flush buffers, Close the current files,
+                leaving the buffer empty
+
+    ERfilename- Assign the filename for Reading,
+                read a page into the buffer
+
+    EQqfilename-Assigns filename for reading, into Qregister q.
+
+    ET        - Dump the current text buffer, for debugging TECO/2
+
+    EWfilename- Assign the filename for Writing
+
+    EX        - Exit TECO/2
+
+    Eq        - push flag q
+
+    nEq       - pop value into flag q
+
+  [:]^Uqtext  - insert (append) text into q-register
+
+  [:]n^Uq     - insert (append) character n into q-register
+
+  nUq         - Store n into numeric Q-register q.
+
+  Gq          - Insert the contents of Q-register q
+
+  :Gq         - Show the contents of Q-register q
+
+  Qq          - Push the contents of numeric Q-reqister q
+
+  nQq         - Push the ascii code for the text in Q-register q,
+                at position n. If n is out of bounds, a -1 is returned.
+
+  :Qq         - Push the number of characters in Q-register q.
+
+  [:][n|range]Xq
+              - Like Type, but results replace contents of q-register
+                instead of going to screen. If colon modified, q-register
+                is not cleared, but rather is appended.
+
+  Mq          - Execute the contents of text in Q-register as a command.
+                M commands may be recursively invoked.
+                Arguments are passed through this command to commands in the
+                Q-register. Likewise, values can be returned.
+
+  ^Atext^A    - Type text on display
+
+  ^T          - Pause and get a key from the keyboard, pushing ascii value.
+                If ET&8 has not been set, the key is echoed.
+
+  n^T         - Type ascii n on display
+
+  !text!      - A label for conditional branching, etc. - text is ignored
+                Also used to comment text in a macro.
+
+
+LOOP/BRANCHING COMMANDS
+
+  n<commands> - Execute commands n times, if n <= 0 the interpreter
+                skips ahead to just past the next >
+                (n defaults to 32767!, so be careful, it could take
+                 quite a long time to execute if your not careful!)
+
+  n;          - Exits a loop if n >= 0   (n defaults to -1 (no skip))
+  n:;         - Exits a loop if n <  0   (n defaults to -1 (skip))
+
+                Example:  1000<N.ZIP$FR.PAK$;>
+                Would do up to 1000 search/replaces, quiting as soon
+                as the last one is done...
+
+
+  F>          - Branch to the end of the current iteration
+                (before the ">") or to the end of the current command
+                string if not in an iteration.
+
+  F|          - Branch to the next | OR '
+  F'          - Branch to the next '
+
+  n"Xcom'     - Conditional expression, com, will be executed
+                only if n meets criterion X.
+
+  n"Xcm1|cm2' - Conditional expression, cm1, will be executed
+                only if n meets criterion X.
+                Conditional expression, cm2, will be executed
+                only if n fails criterion X.
+
+  Conditional's criterions are:
+    A    ASCII Alphabetical (upper or lower case)
+    C    RADIX 50.
+    D    ASCII digit
+    E    zero
+    F    false or failed (zero)
+    G    Greater than zero
+    L    Less than zero
+    N    Not equal to zero
+    R    ASCII Alphanumeric
+    S    Successful (less than zero)
+    T    True (less than zero)
+    U    Unsuccessful (equal to zero)
+
+  Note:  n defaults to 0
+
+
+  All other commands are treated as an error, and displayed as such.
+
+ ************************** Revision History ****************************
+  7/18/91 - Add code to do a rudimentary loop of the form   n< code here >
+  7/22/91 - Fix bug in function GetConstant that pushed extra junk on the stack
+          - Fix bug which caused an unsucessful search/replace to execute the
+            replace argument as a command. (Nasty litte critter, that one)
+
+1.02á
+  7/23/91 - Add code to entirely skip a loop if the count <= 0
+            Add code to return a number on a bad search
+            Add support for the ; command, to make search/replace work
+  7/25/91 - Modify Search to put pointer AFTER match, to match specs
+            Design new search routine, much faster! Supports most of the
+            string building characters from the documentation.
+
+
+1.05á
+
+ 12/03/91 - Found some big bugs last week working with a large file (78k)
+
+  Changes since 1.03á :
+
+  Bugs fixed:
+
+    Page command didn't work properly
+
+    EX didn't write all of file out correctly, dropped contents of buffer!
+
+    Memory allocation errors cause heap to overflow after a while
+
+    No U command to store EC flag
+
+  Features added:
+
+    U command to store to a numeric qregister
+
+    F> to skip to the end of a loop
+
+    N command supports some pattern matching operations, and is MUCH
+      faster than Search, but can only handle 31 character strings, and
+      doesn't do paging as in real teco.
+      (NOT COMPATIBLE with REAL TECO!)
+      N will be merged with code for S command when it is all tested
+      (Around version 1.10)
+
+    Add conditional Expressions :
+
+      "G  do if greater than zero
+      "E  do if equal to zero
+
+
+Version 1.06á - 12/04/91 - MAW
+  
+  Revise error handling routines, put in BUFF.PAS
+  Fix bug in TBuf.Done, wouldn't output memory unless there was input.

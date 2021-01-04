@@ -1,0 +1,434 @@
+                                TECO REFERENCE LIST
+
+                                    Tom Almy
+
+                                  INTRODUCTION
+
+  This is a concise reference of all commands on TEK UNIX TECO. All commands
+are listed in upper case (lower is always valid). Control characters may be
+either typed in directly or using "^" construct, most of the time. The escape
+character is represented as "$"; the dollar sign is not used as a command in
+TECO. Lower case letters represent arguments as follows:
+
+n         Optional numeric argument, signed. When absent, default is 0 or 1
+          depending on which makes most sense! A lone "-" is interpreted to be
+          "-1". In "line oriented" commands, positive values mean "after the
+          nth linefeed", while negative (or zero) values mean "just after the
+          1-nth previous linefeed".
+
+m,n       Pair of numeric arguments in most commands means from the m+1th to
+          and including the nth character. In flag commands means AND current
+          value with m then OR it with n (and store this value).
+
+q         Specifies a "Q-register". Valid values are A-Z, 0-9.
+
+s         A string argument either <string>$ or <arbitrary character>
+          <string not including arbitrary char> <arbitrary char>.
+          In the latter case, the command is preceded with "@".
+
+ss        Two string arguments, either <string>$<string>$ or
+          <arbitrary char> <string not including arbitrary char>
+          <arb char> <string not including arb char> <arb char>.
+          In the latter case, the command is preceded with "@".
+
+
+
+
+
+                             IMMEDIATE ACTION AIDS
+
+   These commands are valid immediately after TECO has prompted for input.
+
+*q        Will save previous command string in Q-register.
+
+?         If previous command caused an error, will print command string up to
+          error.
+
+linefeed  Performs "1lt".
+
+BACKSPACE Performs "-1lt".
+
+
+
+                                 NON-COMMANDS
+
+CR,LF,SPACE    These characters are ignored in commands (note that tab is not
+               ignored).
+
+NULL           This character is screened out on input.
+
+?              Toggles trace mode.
+
+!text!         Comments
+
+$              The escape character, singly, is a NO-OP command that will
+               use up any numeric value that precedes it.
+
+
+
+                           IMMEDIATE MODE COMMANDS
+
+  These commands are executed immediately when TECO is prompting for command
+string input. Those commands that contain control characters must be entered
+using the characters and not the caret-character equivalents.
+
+$$        Start command execution.
+
+Backspace Delete previous character.
+
+^U        Delete current line of command.
+
+^G^G      Delete entire command string.
+
+^G<space> Retype the current command line.
+
+^G*       Retype the current command.
+
+^C        Delete entire command string.
+
+
+
+                           EXECUTION MODE COMMANDS
+
+  The following commands may be executed when TECO is executing a command
+string:
+
+^O        Toggles the printout off and on.
+          Return to command mode forces printout on.
+
+^S        Temporarily stops printout.
+
+^Q        Resumes printout stopped via ^S.
+
+^C        Aborts execution and causes XAB error.
+
+
+                         FILE SPECIFICATION COMMANDS
+
+ERs       Specifies the input file, any previous file is "closed".
+
+EWs       An EF is performed then a temporary file is created on the same
+          directory for output. When the output file is closed, that file
+          is renamed "s".
+
+EBs       An EF is performed then an ER and an EW is performed for the named
+          file. When the file is closed, The original file is renamed with
+          "," prepended to its filename. (See also ED&32 mode control flag.)
+
+EF        Closes the current output file by deleting any file with the same
+          name and then renaming the temporary file.
+
+EC        Moves the contents of the text buffer and the remainder of the
+          current input file to the current output file then closes both
+          files (see EF).
+
+EX        Same as EC, but exits TECO when finished.
+
+EK        Purges the current temporary output file leaving any file of the
+          same name intact. Also undoes the EB command.
+
+EQ        Performs an EK then leaves TECO.
+
+EIs       Specifies an indirect command file. All further input will come
+          from this file until end of file is reached or an error occurs.
+          Immediate mode commands are not treated as such with the exception
+          of "$$", which will start execution.
+
+EI$       Stops execution of an indirect command file by forcing end of file.
+
+E!$       Invokes the UNIX shell. Return with "^D".
+
+E!s       Invokes the UNIX shell for the command "s".
+
+  Colon modified ER, EW, EB, EI, or E! will return numeric value (-1 for
+  success, 0 for failure) instead of giving error messages.
+
+
+                          PAGE MANIPULATION COMMANDS
+
+A         Append the next page of the input file into the text buffer. A page
+          is delimited by a formfeed character. The appending action may stop
+          without reading a formfeed (see ED flag).
+
+Y         Delete entire text buffer then perform "A".
+
+nPW       Write the text buffer to the output file and append a form feed.
+          Do this n times.
+
+m,nPW     Write the m+1th through nth characters to the output file.
+
+HPW       Same as PW, except no formfeed is appended.
+
+nP        Writes the contents of the buffer to the output file; appends a
+          formfeed if the last page read in (via A, Y, or P) was terminated
+          with a formfeed. A "Y" command is then performed.
+
+m,nP      Same as "m,nPW".
+
+
+
+                      BUFFER POINTER MANIPULATION COMMANDS
+
+  The buffer pointer is always positioned between characters. The position
+before the first character is "0", or "B". The position after the last
+character is "Z". The current position is ".".
+
+nJ        Move the pointer to position n.
+          An error occurs if the pointer is moved beyond the text.
+
+nC        Advance the pointer n characters forward (n may be negative).
+          An error occurs if the pointer is moved beyond the text.
+
+nR        Move the pointer n characters backwards (n may be negative).
+          An error occurs if the pointer is moved beyond the text.
+
+nL        Line oriented command to move pointer n lines forward.
+
+
+                             TEXT TYPEOUT COMMANDS
+
+nT        Line oriented text typeout from current position to specified
+          relative line.
+
+m,nT      Character oriented text typeout. HT will type entire buffer.
+
+nV        Type out n-1 lines on each side of the current line.
+          Equivalent to 1-nTnT.
+
+n^T       Types out the ASCII character whose value is n.
+
+^Atext^A  Outputs "text" to the terminal.
+
+See also Q-register commands.
+
+
+                      TEXT DELETION AND INSERTION COMMANDS
+
+nD        Delete the first n characters from the current pointer position.
+
+nK        Line oriented deletion from the pointer position to the nth linefeed.
+
+m,nK      Delete character m+1 through character n.
+          The pointer moves to position m.
+
+m,nD      Same as "m,nK".
+
+HK        Delete the entire text buffer.
+
+Is        Insert the string, s, at the current position.
+          Pointer is positioned at the end of the string.
+
+<tab>s    Insert a tab character followed by the string, s.
+
+nI$       Insert a single character whose ASCII value is n at the current
+          buffer position.
+
+n\e       The ASCII representation of the number n, in the current radix,
+          is inserted in the text. "n" must be present.
+
+FRs       Replace the preceding p characters with the string s, where p is
+          the length of the most recent successful search string or insertion.
+
+See also Q-register commands.
+
+
+                                SEARCH COMMANDS
+
+   All search commands may be preceded by ":" to suppress search failure
+errors and return the value -1 on success or 0 on failure. If a search in an
+interation loop is followed by a ";" then the command behaves as though it
+had a leading ":", otherwise if the search fails a warning message is given
+and execution proceeds after the closing angle bracket. In general, if a
+search fails, the pointer is unchanged. If the search succeeds, the pointer
+is placed at the end of the matched string. Searches may be performed in a
+backwards direction (except those that do "P" or "Y" commands).
+
+nSs       Search for the nth occurrence of s in the text buffer starting at
+          the current pointer position. If the string is not found the the
+          pointer is positioned at the beginning of the buffer
+          (exception--see ED flag).
+
+m,nSs     same as nSs, but m serves as a bound limit. The search succeeds
+          if the pointer need not advance more than ABS(m)-1 places.
+          If m=0, then search is unbounded.
+
+nFBs      A line oriented bounded search where the search starts at the current
+          pointer position and continues up to the nth linefeed.
+
+m,nFBs    Searchs from the m+1th to the nth character.
+          HFBs would be an unbounded search of the entire buffer.
+
+nNs       Same as the "nSs" command but will do "P" commands as necessary to
+          find the string. String may not cross a page boundary.
+
+n_s       Same as the "nSs" command but will do "Y" commands as necessary to
+          find the string. String may not cross a page boundary.
+
+nFSss     Same as "nSsFRs".
+
+m,nFSss   Same as "m,nSsFRs".
+
+nFNss     Same as "nNsFRs".
+
+nFCss     Same as "nFBsFRs".
+
+m,nFCss   Same as "m,nFBsFRs".
+
+::Ss      Compare command.  Same as "1,1:Ss" or ".,.FBs".
+
+
+                            SEARCH STRING FUNCTIONS
+
+^         The caret character means that the following character is to be used
+          as its control character equivalent. May be disabled (see ED flag).
+
+^Q        The following character is to be used literally rather than as a
+          match control character.
+
+^EQq      The string stored in Q-register q is to be used in this position
+          in the search string.
+^\e       Toggle between exact and either case match in the search string.
+
+^X        Matches any character in this position.
+
+^S        Matches any non-alphanumeric character in this position.
+
+^N        Matches any character that doesn't match the following character or
+          match control character.
+
+^EA       Matches any alphabetic character (regardless of case).
+
+^EC       Matches any radix-50 character.
+
+^ED       Matches any digit.
+
+^EL       Matches any linefeed, vertical tab, or formfeed.
+
+^ER       Matches any alphanumeric character in this position.
+
+^ES       Matches any non-null string of spaces and/or tabs in this position.
+
+^EX       same as "^X".
+
+^E[...]   Matches any single character that is in "...".
+
+
+                           Q-REGISTER LOADING COMMANDS
+
+^Uqs      The string, s, is inserted into Q-register q.
+
+:^Uqs     The string, s, is appended into Q-register q.
+
+n^Uq$     The character with ascii code n is inserted in the Q-register.
+
+n:^Uq$    The character with ASCII code n is appended to Q-register q.
+
+nXq       Line oriented text insertion from pointer to nth line feed
+          into Q-register.
+
+n:Xq      Same as "nXq" but appends to Q-register.
+
+m,nXq     Inserts m+1th through nth characters into Q-register q.
+
+m,n:Xq    Appends m+1th through nth characters into Q-register q.
+
+nUq       Store n into numeric Q-register q.
+
+m,nUq     Same as nUqm.
+
+n%q       Adds n to the numeric Q-register q. Returns updated value.
+
+]q        Pop from the Q-register push-down list into Q-register q.
+          Numeric values are passed through this command.
+
+:]q       Same as "]q", but returns a value -1 if an item was popped or 0
+          if the list was empty (Q-register unchanged).
+
+
+                          Q-REGISTER RETRIEVAL COMMANDS
+
+Gq        Copy the text in Q-register q into the text buffer at the current
+          buffer position. The pointer is then positioned after the inserted
+          text.
+
+:Gq       Print the contents of the Q-register on the terminal.
+
+Qq        Returns the numeric value in the Q-register.
+
+nQq       Returns the numeric value of the nth character in the Q-register, or
+          -1 if n is greater or equal to the number of characters in the
+          Q-register.
+
+Mq        Execute the contents of text in Q-register as a command.
+          M commands may be recursively invoked.
+          Arguments are passed through this command to commands in the
+          Q-register. Likewise, values can be returned.
+
+[q        Copy the contents of the numeric and text storage areas of
+          the Q-register into the Q-register push-down list.
+          Numeric values are passed through this command.
+          If teco enters command mode, the push-down list is deleted.
+
+
+                               BRANCHING COMMANDS
+n<          Marks the start of an iteration loop. Must be matched with a
+            ">" later in the command. If n<=0 then the iteration loop is
+            skipped. If n is absent then loop will iterate indefinitely.
+>           Marks the end of an iteration loop. The iteration count is
+            decremented, and control returns to the command following the
+            "<" if the remaining count is greater than zero.
+F>          Branch to the end of the current iteration (before the ">") or
+            to the end of the current command string if not in an iteration.
+F<          Branch to the beginning of the current iteration or to the
+            beginning of the current command string if not in an iteration.
+F'          Branch to the end of the current conditional.
+F|          Branch to the else clause of the current conditional.
+            If none found, then branch to end of current conditional.
+^[$         Exit the current macro level or return to command level if not
+            in a macro. Numeric arguments can be returned.
+n;          Branch out of the current iteration if n>=0.
+!tag!       Labels location for "Os" command. Also useful for comments.
+Os          Branch to the first occurrence of the specified label (tag) in
+            the current macro level. Branching to the left of the current
+            iteration start is not permitted.
+n"Xcom'     Conditional expression, com, will be executed only if n meets
+            criterion X.
+n"Xcm1|cm2' Conditional expression, cm1, will be executed only if n meets
+            criterion X. Conditional expression, cm2, will be executed only
+            if n fails criterion X.
+
+Conditional's criterions are:
+A    ASCII Alphabetical (upper or lower case)
+C    RADIX 50.
+D    ASCII digit
+E    zero
+F    false or failed (zero)
+G    Greater than zero
+L    Less than zero
+N    Not equal to zero
+R    ASCII Alphanumeric
+S    Successful (less than zero)
+T    True (less than zero)
+U    Unsuccessful (equal to zero)
+
+
+                              NUMERIC QUANTITIES
+
+Note that colon modified searches return values.
+B         Zero (beginning of text buffer).
+Z         Length of text buffer.
+.         Current pointer position
+H         Whole buffer, equivalent to "B,Z"
+nA        The ASCII code for the character to the right of buffer position .+n.
+          "n" must be present.
+Mq        Macro command may return a value if the last command in the string
+          returns a value and is not followed by an ESCAPE.
+:Qq       The number of characters in the text storage area of Q-register q.
+\e        The numeric value (in the current radix) of the number to the right of
+          the pointer (if any).
+          The pointer is moved past the number.
+          If there is no number, zero is returned and the pointer is unchanged.
+^E        -1 if the last Y or A type command was terminated with a formfeed.
+          Otherwise, 0.
+^F        Process ID.
+^N        -1 if the currently open input file is at end-of-file, otherwise 0.

@@ -1,0 +1,23 @@
+  Arguments for compilation of commands prior to execution:
+
+   Catch syntax errors before a command is executed.
+     Eliminate "go half way through and bomb" type problems.
+
+    Improved speed of execution
+      Pre-compiled macros... 'nuff said
+
+    Allow really tricky conditional branches in code to work properly.
+
+
+Random ideas:
+  Turbo IDE like environment, F8 traces over, F7 traces into,
+  F4 runs to a breakpoint, examine Q registers, etc.
+
+  Multiple windows, command window, etc.
+
+  Compiled code has pointers to source
+
+  Code can't modify itself directly (important!)
+
+  When a buffer is modified, it's "compiled" flags goes away.
+
