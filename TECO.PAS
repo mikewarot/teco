@@ -2,8 +2,7 @@ Program Teco;
 {
   The Last remake of TECO, a nice editor....
 
-  Copyright (C) 1989-1991 Michael Warot, all rights reserved.
-  Distribution of this SOURCE CODE is strickly prohibited.
+  Copyright (C) 1989-2021 Michael Warot, all rights reserved.
 
   Disclaimer: The author makes no warantee, expressed or implied.
             Use this software strickly at your own risk.

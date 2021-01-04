@@ -10,8 +10,7 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Teco"/>
         <IsVisibleTab Value="True"/>
-        <TopLine Value="61"/>
-        <CursorPos X="32" Y="82"/>
+        <CursorPos Y="11"/>
         <UsageCount Value="20"/>
         <Loaded Value="True"/>
       </Unit0>
