@@ -68,6 +68,9 @@ Program Teco;
 
            Modify ExitLoop to pass F> in a command
 
+01/03/2021 - Modify code to work in Windows 10, 64 Bit,
+  on a machine with with more Disk and RAM than MS-DOS could even access.
+
 }
 Uses
   Stacks,
@@ -76,7 +79,7 @@ Uses
 Const
   ESC = #27;
   CrLf           : Array[0..1] of Char = #13#10;
-  Version        = '1.06á';
+  Version        = '1.07 alpha';
   ProgName       = 'TECO/2';
 
   DefaultSize    = 1000;

@@ -1,19 +1,15 @@
 TECO/2 Implementation Details, etc.
 
-Last Update  : December 4, 1991
-Last Version : 1.06á
-Author       : Michael Warot                  (219) 845-7970
-               7751 Chestnut Ave
-               Hammond, Indiana 46324-3223
+Last Update  : January 3, 2021
+Last Version : 1.07 Alpha
+Author       : Michael Warot                  
 
-Email : chinet!ka9dgx
-        Mike Warot @ dBasics ToolKit (219) 696-3415
-                     The Ward Board  (708) 849-1132
+Email : chezmike<at>gmail<dot>com
 
 
  ***************************  LEGAL STUFF *******************************
 
-Copyright (C) 1989-1991 Michael Warot, all rights reserved.
+Copyright (C) 1989-2021 Michael Warot, all rights reserved.
 Permission to use and distribute this program for NON-COMMERCIAL use
 is hereby granted, providing NO FEES are charged, and the package is
 distrubuted complete, without modification.
@@ -59,7 +55,7 @@ me know I helped someone.
 
  *********************** Implementation Details *************************
 
-Language: Turbo Pascal 6.0 (source code is available upon request)
+Language: Free Pascal 3.2 source code is available at https://github.com/mikewarot/teco
 
 TECO is a character oriented, command line interface, text editor. Commands
 are entered at the "* " prompt, backspace deletes the previous character,
@@ -346,3 +342,8 @@ Version 1.06á - 12/04/91 - MAW
   
   Revise error handling routines, put in BUFF.PAS
   Fix bug in TBuf.Done, wouldn't output memory unless there was input.
+  
+Version 1.07 Alpha - 01/03/2021 - MAW
+
+  Hack code enough to get it working in Windows 10, 64 Bit, under Free Pascal 3.2
+  Remove old phone number, address, etc.
