@@ -21,6 +21,9 @@ Const
 
   ESC          = #27;
 
+  MaxAvail     = 1000000;  // a quick hack to get things started
+  MemAvail     = 1000000;  // more of same
+
 Type
   TextPtr      = Word;
 

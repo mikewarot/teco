@@ -1,6 +1,4 @@
 Program Teco;
-{$X+,N-,E-,I+,R+,S+,G-}
-{ $ X+,N-,E-,I-,R-,S-,G-}
 {
   The Last remake of TECO, a nice editor....
 
@@ -74,7 +72,7 @@ Program Teco;
 Uses
   Stacks,
   Buff,
-  DOS;
+  DOS,CRT;
 Const
   ESC = #27;
   CrLf           : Array[0..1] of Char = #13#10;
@@ -92,6 +90,19 @@ Type
 Const
   NullKey   : KeyStroke = (ascii:#0;stroke:0);
 
+Function GetKey     : KeyStroke;
+var
+  x : KeyStroke;
+begin
+  x.ascii := ReadKey;
+  if x.ascii = #0 then
+    x.stroke := ord(ReadKey)
+  else
+    x.stroke := 0;
+  GetKey := x;
+end;
+
+(*
 Function GetKey     : Word; Assembler;
 Asm
   xor    ax,ax      { Keyboard int, get key }
@@ -107,6 +118,7 @@ Asm
   inc    ax
 @@1:                { 1 if key ready, 0 if not }
 End;
+*)
 
 Function Qnum(X : Char):Byte;
 Const
@@ -121,18 +133,7 @@ Const
      26,27,28,29, 30,31,32,33, 34,35,36, 0,  0, 0, 0, 0);
 
 begin
-  Asm
-         push  bx
-         mov   al,X
-         cbw                 { ax is now $0000..$007f  OR   $ff80..$ffff }
-         xor   ah,$ff        { ax is now $ff00..$ff7f  OR   $0080..$00ff }
-         and   al,ah         { ax is now $ff00..$ff7f  OR   $0000..$0000 }
-         xor   ah,ah         { ax is now $0000..$007f  OR   $0000..$0000 }
-         lea   bx,Qxlat
-         xlat
-         pop   bx
-         mov   @result,al
-  End;
+  Qnum := Qxlat[Ord(X) AND $7f];
 End;
 
 (******** Global variables *********)
@@ -551,7 +552,7 @@ Var
 
 
   { scans forward for the end of a loop }
-  procedure exitloop(out : boolean);
+  procedure exitloop(xout : boolean);
   var
     lastchar : char;
   begin
@@ -566,7 +567,7 @@ Var
     if cmd^.thischar <> '>' then
       error('loop missing ending ">"!')
     else
-      if out then cmd^.move(+1);                    { Mod for skip to > }
+      if xout then cmd^.move(+1);                    { Mod for skip to > }
   end;
 
   { returns true if inside a loop, else errors, and returns false }
@@ -625,6 +626,7 @@ Var
   S1,S2 : Word;
   S     : String;
   Q     : pbuf;
+  kludge : integer;
 begin
   cmd^.JumpTo(0);
   ReInit;
@@ -784,8 +786,11 @@ begin
                     Case UpCase(X) of
                       'B'  : if GetStringParam(Cmd,P1,S1) then
                              begin
-                               S[0] := Char(s1);
-                               System.Move(P1^,S[1],S1);
+                               s := '';
+                               for kludge := 1 to S1 do
+                                 s := s + char((P1+kludge-1)^);
+//                               S[0] := Char(s1);
+//                               System.Move(P1^,S[1],S1);
                                Data^.AssignRead(S);
                                Data^.AssignWrite(S);
                              end;
@@ -798,23 +803,32 @@ begin
                                q := Qregister;
                                if GetStringParam(Cmd,P1,S1) then
                                begin
-                                 S[0] := Char(s1);
-                                 System.Move(P1^,S[1],S1);
+                                 s := '';
+                                 for kludge := 1 to S1 do
+                                   s := s + char((P1+kludge-1)^);
+//                                 S[0] := Char(s1);
+//                                 System.Move(P1^,S[1],S1);
                                  Q^.AssignRead(S);
                                end;
                              end;
 
                       'R'  : if GetStringParam(Cmd,P1,S1) then
                              begin
-                               S[0] := Char(s1);
-                               System.Move(P1^,S[1],S1);
+                               s := '';
+                               for kludge := 1 to S1 do
+                                 s := s + char((P1+kludge-1)^);
+//                               S[0] := Char(s1);
+//                               System.Move(P1^,S[1],S1);
                                Data^.AssignRead(S);
                              end;
                       'T'  : Data^.Dump;
                       'W'  : if GetStringParam(Cmd,P1,S1) then
                              begin
-                               S[0] := Char(s1);
-                               System.Move(P1^,S[1],S1);
+                               s := '';
+                               for kludge := 1 to S1 do
+                                 s := s + char((P1+kludge-1)^);
+//                               S[0] := Char(s1);
+//                               System.Move(P1^,S[1],S1);
                                Data^.AssignWrite(S);
                              end;
                       'X'  : Done := True;
@@ -918,7 +932,7 @@ begin
 
       ^T        : If Stack.Empty then
                   begin
-                    k := Lo(GetKey);
+                    k := Ord(GetKey.Ascii);
                     Stack.Push(Longint(k));
                     If (Flags[Qnum('T')] and $08) = 0 then
                       Write(Char(k));
@@ -1022,7 +1036,7 @@ begin
   LoopStack.Clear;
   QStack.Clear;
 
-  Word(c) := GetKey;
+  c := GetKey;
   case C.ascii of
     Esc : Exit;
   else
@@ -1033,7 +1047,7 @@ begin
 
   Repeat
     Last := C;
-    Word(C) := GetKey;
+    C := GetKey;
     Case C.ascii of
       #13       : Begin
                     WriteLn;
@@ -1059,7 +1073,7 @@ Var
   C,X,Last  : KeyStroke;
   Current   : Integer;
   i         : integer;
-  CommandP  : ^String;
+  CommandP  : String;
   ExeName,
   IniName   : PathStr;
 
@@ -1079,7 +1093,14 @@ Begin
   FillChar(Flags,SizeOf(Flags),#0);
   FillChar(Qregs,Sizeof(Qregs),#0);
 
-  CommandP := Ptr(PrefixSeg,$80);
+//  CommandP := Ptr(PrefixSeg,$80);
+  CommandP := '';
+  For i := 1 to paramcount do
+    if i <> 1 then
+      CommandP := CommandP + ' ' + ParamStr(i)
+    else
+      CommandP := ParamStr(i);
+
 
   Current   := 0;
 
@@ -1087,7 +1108,7 @@ Begin
   LoopStack.Init;
   QStack.Init;
 
-  Qregs[11] := PBuf(New(PBuffer,Cpy(@CommandP^[1],Length(CommandP^)) ) );
+  Qregs[11] := PBuf(New(PBuffer,Cpy(@CommandP[1],Length(CommandP)) ) );
 
   Qregs[37] := New(PBuf,Load(INIname));
   Qregs[Current] := New(PBuf,Init(DefaultSize));
