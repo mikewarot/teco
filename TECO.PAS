@@ -842,13 +842,6 @@ begin
                     End;
                   End;
 
-      'U'       : Begin
-                    X := cmd^.ThisChar;
-                    cmd^.Move(+1);
-                    k := qnum(X);
-                    if Stack.Empty then Stack.Push(Flags[k])
-                                   else Flags[k] := Stack.Pop;
-                  End;
 
       'A'       : Data^.ReadPage;
       'P'       : Data^.WritePage;
@@ -895,6 +888,12 @@ begin
                       end;
                     end;
                   end;
+      'U'       : begin
+                    q := Qregister;
+                    k := Stack.Pop;
+                    Q^.Number := k;
+                  end;
+
 
       'X'       : begin
                     q := Qregister;
