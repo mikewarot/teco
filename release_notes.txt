@@ -1,0 +1,74 @@
+  The Last remake of TECO, a nice editor....
+
+  Copyright (C) 1989-2021 Michael Warot, all rights reserved.
+
+  Disclaimer: The author makes no warantee, expressed or implied.
+            Use this software strickly at your own risk.
+
+  "Back when I was 25, we didn't have any fancy windows and mice...
+  AND WE LIKED IT THAT WAY!", yeah, SSSSSUUUURRRRREEEEE....
+
+  Rev
+   4 - Add command input routine, begin implementing a simple
+       command interpreter
+   5 - Implement string parameters
+   6 - Implement number parameters and a small (10) stack
+   7 - Implement a simple form of numeric expressions
+   8 - Procedure Execute added, to allow commands to come from multiple
+       sources, and allow the "current" buffer to be one of many.
+       Add LineOriented()
+   9 - Move TBuffer and Tstack out to separate units
+       Add ExecStr()
+  10 - More debugging....
+  11 - File oriented I/O, buffers, etc.
+  12 - Remove ExecStr()
+       Make all q-registers general purpose.... (You're right, Ken)
+       procedures use pointers instead of VAR parameters
+  13 - Add search and replace. (Pattern matching supported, but slow).
+
+ 1/21/91 - MAW
+  14 - Write first draft of TECO.DOC, revise code to more closely match
+       definitions in DEC's manual.
+
+ 1/21/91 - MAW - Big problem, because of the interpretive nature of the
+               current implementation, conditional branching looks to be
+               a real problem. Considering "compiling" commands, which
+               would eliminate most semantic ambiguities, in addition
+               to increasing the speed of operations.
+
+
+ Varsion 100 - experimental, compiling version. (NOT COMPILING!)
+
+  Notes: Flag "C" and 1 is the Case Sensitive flag, default off (0)
+         Flag "T" and 8 is the NO ECHO flags, default off (echo keys)
+
+ 7/17/91 - Replace all tbuffer references with tbuf, to allow for file I/O.
+           A simple search/replace command actually works now!
+           First release to the public
+
+ 7/22/91 - Correct bug in GetConstant which pushed junk on the stack
+         - Correct logic fault, never allow GetStringParam to be inside
+           a conditional if an argument is REQUIRED, if the procedure isn't
+           called, the argument becomes part of the command, not just
+           another parameter!   Append is the one exception to this rule.
+ 7/23/91 - Fix bug in Search, wouldn't find a match at the current cursor
+           position.
+
+ 7/25/91 - Fix bug (feature?) which caused EX in a .INI file to be ignored
+         - Add StringSearch, a MUCH faster engine for searching through
+           the buffer. Supports most of the "String Build" characters
+
+1.03á--- release?
+
+12/03/91 - Modify code to use Release(QStack.Pop,Done) to eliminate bug
+           which eats memory. Old version didn't properly page text...
+
+           Modify ExitLoop to pass F> in a command
+
+01/03/2021 - Modify code to work in Windows 10, 64 Bit,
+  on a machine with with more Disk and RAM than MS-DOS could even access.
+
+1.08 alpha - July 2024
+  Start to refactor code, make names less ambigious, set up for 64 bit operation
+
+

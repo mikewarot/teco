@@ -1,10 +1,4 @@
-Unit Buff;
-{$X+}
-{
-  1/25/91 - Add modified flag, begin implementing file assignments, etc.
-
- 12/03/91 - Modify TBuf.Done to clear AFTER paging out rest of file....
-}
+Unit TextBuffers;
 Interface
 Uses
   MyObj,DOS;
@@ -25,19 +19,19 @@ Const
   MemAvail     = 1000000;  // more of same
 
 Type
-  TextPtr      = Word;
+  TextPtr      = NativeUint;
 
-  Buf          = Array[0..$fff0] of Char;
-  BufPtr       = ^Buf;
+  Buffer       = Array[0..$fff0] of Char;
+  PBuffer      = ^Buffer;
 
-  PBuffer      = ^TBuffer;
-  Tbuffer      = Object(TBaseObject)
+  PTextBuffer      = ^TTextBuffer;
+  TTextBuffer      = Object(TBaseObject)
                    Number    : Longint;
 
-                   Constructor Init( MaxSize : Word);
+                   Constructor Init( MaxSize : NativeUint);
 
                    Constructor Cpy( P : Pointer;
-                                    S : Word);
+                                    S : NativeUint);
 
                    Destructor  Done;                                Virtual;
 
@@ -57,12 +51,12 @@ Type
                    Procedure   Move(Amount : Longint);              Virtual;
                    Procedure   Delete(Amount : Longint);            Virtual;
                    Procedure   Insert(Var B;
-                                          BSize : Word);            Virtual;
+                                          BSize : NativeUint);      Virtual;
 
                    Procedure   Show(Start,Stop : TextPtr);          Virtual;
                    Procedure   Dump;                                Virtual;
                  private
-                   Data     : BufPtr;
+                   Data     : PBuffer;
                    Size,               { How big is the allocation }
                    Current,            { Text pointer }
                    Last     : TextPtr; { End of text pointer }
@@ -70,9 +64,9 @@ Type
                { Methods }
                  End;
 
-  Pbuf         = ^Tbuf;
-  Tbuf         = Object(Tbuffer)
-                   Constructor Init( MaxSize : Word);
+  PTextFileBuffer = ^TTextFileBuffer;
+  TTextFileBuffer = Object(TTextBuffer)
+                   Constructor Init( MaxSize : NativeUint);
                    Constructor Load(  Name: PathStr );
                    Destructor  Done;                                Virtual;
 
@@ -93,11 +87,11 @@ Var
   PointerChar  : Char;
   ErrorFlag    : Byte;
 
-  procedure Error(S : String);
+  procedure ReportError(S : String);
 
 Implementation
 
-  procedure Error(S : String);
+  procedure ReportError(S : String);
   begin
     WriteLn(s);
     ErrorFlag := 1;
@@ -105,7 +99,7 @@ Implementation
 
 
 Var
-  TempNum : Word;
+  TempNum : NativeUint;
 
 
   Function Numb(I : LongInt;
@@ -127,7 +121,7 @@ Var
       Write(PointerChar);
   End;
 
-  Constructor TBuffer.Init(MaxSize : Word);
+  Constructor TTextBuffer.Init(MaxSize : NativeUint);
   Begin
     If (MaxSize >  MaxBlockSize) or
        (MaxSize >= MaxAvail) then    Fail;
@@ -140,8 +134,8 @@ Var
     Number   := 0;
   End;
 
-  Constructor TBuffer.Cpy(P : Pointer;
-                          S : Word);
+  Constructor TTextBuffer.Cpy(P : Pointer;
+                          S : NativeUint);
   Begin
     If (S >  MaxBlockSize) or
        (S >= MaxAvail) then    Fail;
@@ -151,15 +145,15 @@ Var
     Current  := 0;
   End;
 
-  Destructor  TBuffer.Done;
+  Destructor  TTextBuffer.Done;
   Begin
     Self.Clear;
     FreeMem(Data,Size);
   End;
 
-  Function    TBuffer.Resize(NewSize : TextPtr):Boolean;
+  Function    TTextBuffer.Resize(NewSize : TextPtr):Boolean;
   var
-    tmp : bufptr;
+    tmp : PBuffer;
   begin
     If (Last <= NewSize) AND (NewSize <= MaxBlockSize) then
     begin
@@ -179,7 +173,7 @@ Var
       Resize := False;
   end;
 
-  Procedure   TBuffer.Clear;
+  Procedure   TTextBuffer.Clear;
   Begin
     If (Current <> 0) OR (Last <> 0) then
     begin
@@ -189,25 +183,25 @@ Var
     end;
   End;
 
-  Procedure   TBuffer.JumpTo(Where : TextPtr);
+  Procedure   TTextBuffer.JumpTo(Where : TextPtr);
   Begin
     If (Where >= 0) and (Where <= Succ(Last) ) then
       Current := Where
     else
-      Error('Jump out of range');
+      ReportError('Jump out of range');
   End;
 
-  Function    TBuffer.WhereAt : TextPtr;
+  Function    TTextBuffer.WhereAt : TextPtr;
   Begin
     WhereAt := Current;
   End;
 
-  Function    TBuffer.EndPtr  : TextPtr;
+  Function    TTextBuffer.EndPtr  : TextPtr;
   Begin
     EndPtr  := Last;
   End;
 
-  Function    TBuffer.PlusLine(Amount : Longint): TextPtr;
+  Function    TTextBuffer.PlusLine(Amount : Longint): TextPtr;
   Var
     T,Left : Longint;
   Begin
@@ -228,31 +222,31 @@ Var
     PlusLine := T;
   End;
 
-  Function    TBuffer.AtEnd:Boolean;
+  Function    TTextBuffer.AtEnd:Boolean;
   Begin
     AtEnd := Current >= Last;
   End;
 
 
-  Function    TBuffer.ThisChar : Char;
+  Function    TTextBuffer.ThisChar : Char;
   Begin
     If Current <> Last then ThisChar := Data^[Current]
                        else ThisChar := #0;
   End;
 
-  Function    TBuffer.ASCII(Where : TextPtr):Char;
+  Function    TTextBuffer.ASCII(Where : TextPtr):Char;
   Begin
     If (Where >= 0) AND (Where < Last) then ASCII := Data^[Where]
                                        else ASCII := #0;
   End;
 
-  Function    TBuffer.ThisCharP : Pointer;
+  Function    TTextBuffer.ThisCharP : Pointer;
   Begin
     If Current <> Last then ThisCharP := @Data^[Current]
                        else ThisCharP := nil;
   End;
 
-  Procedure   TBuffer.Move(Amount : Longint);
+  Procedure   TTextBuffer.Move(Amount : Longint);
   Var
     T : Longint;
   Begin
@@ -260,16 +254,16 @@ Var
     If (T >= 0) and (T <= Succ(Last) ) then
       Current := T
     else
-      Error('Move out of range');
+      ReportError('Move out of range');
   End;
 
-  Procedure   TBuffer.Delete(Amount : Longint);
+  Procedure   TTextBuffer.Delete(Amount : Longint);
   Var
     T,t2 : Longint;
   Begin
     T := Current + Amount;
 
-    If (T < 0) OR (T > Size) then Error('Delete Too Big!')
+    If (T < 0) OR (T > Size) then ReportError('Delete Too Big!')
     else
     begin
       if T < Current then
@@ -288,11 +282,11 @@ Var
     end;
   End;
 
-  Procedure   TBuffer.Insert(Var B;
-                                    BSize : Word);
+  Procedure   TTextBuffer.Insert(Var B;
+                                    BSize : NativeUint);
   Begin
     If (Bsize + Last > Size) AND
-       ( NOT Resize(Bsize + Last + Margin) ) then Error('Insert TOO BIG!')
+       ( NOT Resize(Bsize + Last + Margin) ) then ReportError('Insert TOO BIG!')
     else
     begin
       System.Move(Data^[Current],Data^[Current+Bsize],Last-Current);
@@ -303,7 +297,7 @@ Var
     end;
   End;
 
-  Procedure   TBuffer.Show(Start,Stop : TextPtr);
+  Procedure   TTextBuffer.Show(Start,Stop : TextPtr);
   var
     i : TextPtr;
     c : char;
@@ -324,9 +318,9 @@ Var
     end;
   end;
 
-  Procedure   TBuffer.Dump;
+  Procedure   TTextBuffer.Dump;
   Var
-    i : Word;
+    i : NativeUint;
   Begin
     WriteLn('Memory Available        = ',MemAvail);
     WriteLn('Current Allocation Size = ',Size);
@@ -348,11 +342,11 @@ Var
     WriteLn;
   End;
 
-    (*************************  Tbuf  stuff **************************)
+    (*************************  TTextFileBuffer  stuff **************************)
 
-  Constructor TBuf.Init(MaxSize : Word);
+  Constructor TTextFileBuffer.Init(MaxSize : NativeUint);
   Begin
-    TBuffer.Init(maxsize);
+    TTextBuffer.Init(maxsize);
     SrcName := '';
     DstName := '';
     TmpName := '';
@@ -361,13 +355,13 @@ Var
     Offset  := 0;
   End;
 
-  Constructor TBuf.Load(Name : PathStr);
+  Constructor TTextFileBuffer.Load(Name : PathStr);
   Begin
     Self.Init(MaxBlockSize);
     Self.AssignRead(Name);
   End;
 
-  Destructor TBuf.Done;
+  Destructor TTextFileBuffer.Done;
   var
     f : file;
   begin
@@ -395,7 +389,7 @@ Var
         Close(F);
         {$I-} Erase(F); {$I+}
         If IOresult <> 0 then
-          Error('Error destroying old destination')
+          ReportError('Error destroying old destination')
         else
           Rename(Dst,DstName);
       end;
@@ -404,7 +398,7 @@ Var
     FreeMem(Data,Size);
   end;
 
-  Procedure TBuf.AssignRead(Name : PathStr);
+  Procedure TTextFileBuffer.AssignRead(Name : PathStr);
   Begin
     If SrcName = '' then
     begin
@@ -417,7 +411,7 @@ Var
     If SrcName <> '' then readpage;
   End;
 
-  Procedure TBuf.AssignWrite(Name : PathStr);
+  Procedure TTextFileBuffer.AssignWrite(Name : PathStr);
   Begin
     DstName := '';
     TmpName := '';
@@ -428,7 +422,7 @@ Var
     begin
       {$I-} ReWrite(Dst,1); {$I+}
       If IOresult <> 0 then
-        Error('Error creating destination file')
+        ReportError('Error creating destination file')
       else
         DstName := Name;
     end
@@ -440,14 +434,15 @@ Var
       assign(dst,tmpname);
       {$I-} rewrite(dst,1); {$I+}
       If IOresult <> 0 then
-        Error('Error creating temporary file');
+        ReportError('Error creating temporary file');
     end;
   End;
 
-  Procedure Tbuf.ReadPage;
+  Procedure TTextFileBuffer.ReadPage;
   Var
-    I,J : Word;
+    I,J : NativeUint;
     K   : Longint;
+    RecordsRead : Int64;   // the file is actually a collection of 1 byte records
   Begin
     If ((FileRec(Src).Mode AND fmInput) = fmInput) Then
     begin
@@ -463,16 +458,16 @@ Var
       I := Size - Last;
       If (I > 2) AND (FileRec(Src).Mode = fmInOut) then
       begin
-        BlockRead(Src,Data^[Last],I,J);
-        Last := Last + J;
-        Inc(Offset,J);
+        BlockRead(Src,Data^[Last],I,RecordsRead);
+        Last := Last + RecordsRead;
+        Inc(Offset,RecordsRead);
       end;
     end
     else
-      Error('File not open for input!');
+      ReportError('File not open for input!');
   End;
 
-  Procedure Tbuf.WritePage;
+  Procedure TTextFileBuffer.WritePage;
   begin
     If (FileRec(Dst).Mode AND fmOutput) = fmOutput then
       BlockWrite(Dst,Data^,Last);

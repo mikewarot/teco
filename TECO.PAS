@@ -1,79 +1,7 @@
 Program Teco;
-{
-  The Last remake of TECO, a nice editor....
-
-  Copyright (C) 1989-2021 Michael Warot, all rights reserved.
-
-  Disclaimer: The author makes no warantee, expressed or implied.
-            Use this software strickly at your own risk.
-
-  "Back when I was 25, we didn't have any fancy windows and mice...
-  AND WE LIKED IT THAT WAY!", yeah, SSSSSUUUURRRRREEEEE....
-
-  Rev
-   4 - Add command input routine, begin implementing a simple
-       command interpreter
-   5 - Implement string parameters
-   6 - Implement number parameters and a small (10) stack
-   7 - Implement a simple form of numeric expressions
-   8 - Procedure Execute added, to allow commands to come from multiple
-       sources, and allow the "current" buffer to be one of many.
-       Add LineOriented()
-   9 - Move TBuffer and Tstack out to separate units
-       Add ExecStr()
-  10 - More debugging....
-  11 - File oriented I/O, buffers, etc.
-  12 - Remove ExecStr()
-       Make all q-registers general purpose.... (You're right, Ken)
-       procedures use pointers instead of VAR parameters
-  13 - Add search and replace. (Pattern matching supported, but slow).
-
- 1/21/91 - MAW
-  14 - Write first draft of TECO.DOC, revise code to more closely match
-       definitions in DEC's manual.
-
- 1/21/91 - MAW - Big problem, because of the interpretive nature of the
-               current implementation, conditional branching looks to be
-               a real problem. Considering "compiling" commands, which
-               would eliminate most semantic ambiguities, in addition
-               to increasing the speed of operations.
-
-
- Varsion 100 - experimental, compiling version. (NOT COMPILING!)
-
-  Notes: Flag "C" and 1 is the Case Sensitive flag, default off (0)
-         Flag "T" and 8 is the NO ECHO flags, default off (echo keys)
-
- 7/17/91 - Replace all tbuffer references with tbuf, to allow for file I/O.
-           A simple search/replace command actually works now!
-           First release to the public
-
- 7/22/91 - Correct bug in GetConstant which pushed junk on the stack
-         - Correct logic fault, never allow GetStringParam to be inside
-           a conditional if an argument is REQUIRED, if the procedure isn't
-           called, the argument becomes part of the command, not just
-           another parameter!   Append is the one exception to this rule.
- 7/23/91 - Fix bug in Search, wouldn't find a match at the current cursor
-           position.
-
- 7/25/91 - Fix bug (feature?) which caused EX in a .INI file to be ignored
-         - Add StringSearch, a MUCH faster engine for searching through
-           the buffer. Supports most of the "String Build" characters
-
-1.03á--- release?
-
-12/03/91 - Modify code to use Release(QStack.Pop,Done) to eliminate bug
-           which eats memory. Old version didn't properly page text...
-
-           Modify ExitLoop to pass F> in a command
-
-01/03/2021 - Modify code to work in Windows 10, 64 Bit,
-  on a machine with with more Disk and RAM than MS-DOS could even access.
-
-}
 Uses
   Stacks,
-  Buff,
+  TextBuffers,
   DOS,CRT;
 Const
   ESC = #27;
@@ -104,24 +32,6 @@ begin
   GetKey := x;
 end;
 
-(*
-Function GetKey     : Word; Assembler;
-Asm
-  xor    ax,ax      { Keyboard int, get key }
-  int    $16
-End;
-
-Function KeyPressed : Boolean; Assembler;
-Asm
-  mov    ax,1
-  int    $16        { Keyboard int, get status }
-  mov    ax,0       { Zero flag set = no key   }
-  jz     @@1
-  inc    ax
-@@1:                { 1 if key ready, 0 if not }
-End;
-*)
-
 Function Qnum(X : Char):Byte;
 Const
   Qxlat : Array[0..127] of Byte =
@@ -146,11 +56,11 @@ Var
   QStack  : OStack;
   Done    : Boolean;
   Flags   : Array[0..37] of Longint;
-  Qregs   : Array[0..37] of PBuf;       { Q registers }
+  Qregs   : Array[0..37] of PTextFileBuffer;       { Q registers }
   Qnums   : Array[0..37] of Longint;    { Q registers, numeric part }
   BitMask : Array[0..255] of Longint;   { Used in StringSearch }
 
-  function CmdChar(cmd : pbuf):Char;
+  function CmdChar(cmd : PTextFileBuffer):Char;
   var
     c : char;
   begin
@@ -169,15 +79,15 @@ Function StringCompare(P1,P2 : Pointer):Longint;
 }
 Var
   Data,
-  Pattern   : pbuf;
+  Pattern   : PTextFileBuffer;
   Old1,Old2 : TextPtr;
   CaseSensitive : Boolean;
   c         : char;
   Match     : Boolean;
   Size      : Longint;
 Begin
-  Pattern := pbuf(P1);
-  Data    := pbuf(P2);
+  Pattern := PTextFileBuffer(P1);
+  Data    := PTextFileBuffer(P2);
   CaseSensitive := (Flags[13] AND 1) <> 0;
   Match := True;
   Old1  := Pattern^.WhereAt;
@@ -216,7 +126,7 @@ End;
 
 
 
-Function StringSearch(Pattern,Data : PBuf):Longint;
+Function StringSearch(Pattern,Data : PTextFileBuffer):Longint;
 {
   A new, faster search engine.
   ONLY GOES 31 characters!
@@ -364,13 +274,13 @@ Begin
   end;
 End;
 
-Procedure Compile_And_Execute(Var Cmd, Data : pbuf);
+Procedure Compile_And_Execute(Var Cmd, Data : PTextFileBuffer);
 Begin
 End;
 
 
 
-Procedure Execute(Var Cmd, Data : pbuf);
+Procedure Execute(Var Cmd, Data : PTextFileBuffer);
 Var
   Delim       : Char;        { #0 if '@' prefix used }
   ColonPrefix : Boolean;
@@ -415,7 +325,7 @@ Var
     GetConstant := T;
   End;
 
-  Function ValidNumber(Var B : pbuf) : Boolean;
+  Function ValidNumber(Var B : PTextFileBuffer) : Boolean;
   var
     ok : boolean;
     t  : longint;
@@ -479,9 +389,9 @@ Var
 
 (******** String parameter routines **********)
 
-  Function GetStringParam(Var B : pbuf;
+  Function GetStringParam(Var B : PTextFileBuffer;
                           Var P : Pointer;
-                          Var S : Word        ) : Boolean;
+                          Var Size : NativeUint        ) : Boolean;
   Var
     Ok : Boolean;
   Begin
@@ -491,12 +401,12 @@ Var
       cmd^.Move(+1);
     end;
     P     := cmd^.ThisCharP;    { Pointer to buffer }
-    S     := cmd^.WhereAt;      { Current char # }
+    Size     := cmd^.WhereAt;      { Current char # }
     While (NOT Cmd^.AtEnd) AND (cmd^.ThisChar <> Delim) do
       cmd^.Move(+1);
     If cmd^.ThisChar = Delim then
     begin
-      S  := (cmd^.WhereAt - S);
+      Size  := (cmd^.WhereAt - Size);
       Ok := True;
       cmd^.Move(+1);
     end
@@ -523,11 +433,11 @@ Var
     end;
   end; { LineOriented }
 
-  procedure InsertMacro(Var Dest : pbuf);
+  procedure InsertMacro(Var Dest : PTextFileBuffer);
   var
     x : char;
     p1 : pointer;
-    s1 : word;
+    s1 : NativeUint;
   begin
     If ColonPrefix then                    { Append }
       Dest^.JumpTo(Dest^.EndPtr);
@@ -543,12 +453,12 @@ Var
     end;
   end;
 
-  function Qregister: pbuf;
+  function Qregister: PTextFileBuffer;
   var
     c : integer;
   begin
     c := Qnum(cmd^.ThisChar); cmd^.Move(+1);
-    if qregs[c] = nil then qregs[c] := new(PBuf,Init(DefaultSize));
+    if qregs[c] = nil then qregs[c] := new(PTextFileBuffer,Init(DefaultSize));
     Qregister := Qregs[c];
   end;
 
@@ -567,7 +477,7 @@ Var
     end;
 
     if cmd^.thischar <> '>' then
-      error('loop missing ending ">"!')
+      ReportError('loop missing ending ">"!')
     else
       if xout then cmd^.move(+1);                    { Mod for skip to > }
   end;
@@ -577,7 +487,7 @@ Var
   begin
     If LoopStack.Empty then
     begin
-      Error('not in a loop!');
+      ReportError('not in a loop!');
       inloop := false;
     end
     else
@@ -598,7 +508,7 @@ Var
     end;
 
     if (cmd^.thischar <> '|') AND (cmd^.thischar <> '''') then
-      error('loop missing ending ">"!')
+      ReportError('loop missing ending ">"!')
     else
       cmd^.move(+1);
   end;
@@ -616,7 +526,7 @@ Var
     end;
 
     if cmd^.thischar <> '''' then
-      error('loop missing ending "''"!')
+      ReportError('loop missing ending "''"!')
     else
       cmd^.move(+1);
   end;
@@ -625,9 +535,9 @@ Var
   C,X   : Char;
   I,J,K : Longint;
   P1,P2 : Pointer;
-  S1,S2 : Word;
+  S1,S2 : NativeUint;
   S     : String;
-  Q     : pbuf;
+  Q     : PTextFileBuffer;
   kludge : integer;
 begin
   cmd^.JumpTo(0);
@@ -702,8 +612,8 @@ begin
                                    else k := Stack.Pop;
                     If GetStringParam(Cmd,P1,S1) then
                     begin
-                      QStack.Push(New(pbuffer,Cpy(P1,S1)));
-                       Stack.Push( StringSearch(Pbuf(Qstack.Top),Data) );
+                      QStack.Push(New(PTextBuffer,Cpy(P1,S1)));
+                       Stack.Push( StringSearch(PTextFileBuffer(Qstack.Top),Data) );
                       Dispose(QStack.Pop,Done);
                     end;
                   end;
@@ -714,7 +624,7 @@ begin
                                    else k := Stack.Pop;
                     If GetStringParam(Cmd,P1,S1) then
                     begin
-                      QStack.Push(New(pbuffer,Cpy(P1,S1)));
+                      QStack.Push(New(PTextBuffer,Cpy(P1,S1)));
 
                       While (k > 0) AND (Not Data^.AtEnd) do
                       begin
@@ -722,7 +632,7 @@ begin
                         if (i <> 0) then
                         begin
                           dec(k);
-                          Data^.Move(pbuf(QStack.Top)^.EndPtr); {AFTER match}
+                          Data^.Move(PTextFileBuffer(QStack.Top)^.EndPtr); {AFTER match}
                         end
                         else
                           Data^.Move(+1);
@@ -735,7 +645,7 @@ begin
                         if k <> 0 then
                           Data^.Move(-1)
                         else
-                          Data^.Move(pbuf(QStack.Top)^.EndPtr); {AFTER match}
+                          Data^.Move(PTextFileBuffer(QStack.Top)^.EndPtr); {AFTER match}
                       end;
 
                       Dispose(QStack.Pop,Done);
@@ -798,7 +708,7 @@ begin
                              end;
                       'C'  : begin     { close the current buffer }
                                Data^.Done;
-                               Data := New(PBuf,Init(DefaultSize));
+                               Data := New(PTextFileBuffer,Init(DefaultSize));
                              end;
 
                       'Q'  : begin
@@ -1009,7 +919,7 @@ begin
       { Not Zero }    'N' : If I = 0 then
                               GotoElse;
                     else
-                      Error('Undefined Conditional!');
+                      ReportError('Undefined Conditional!');
                     End;
                   end;
 
@@ -1029,7 +939,7 @@ begin
   end;
 end; { Execute() }
 
-procedure GetCommand(var cmd : pbuf);
+procedure GetCommand(var cmd : PTextFileBuffer);
 var
   C,X,Last  : KeyStroke;
 begin
@@ -1109,10 +1019,10 @@ Begin
   LoopStack.Init;
   QStack.Init;
 
-  Qregs[11] := PBuf(New(PBuffer,Cpy(@CommandP[1],Length(CommandP)) ) );
+  Qregs[11] := PTextFileBuffer(New(PTextBuffer,Cpy(@CommandP[1],Length(CommandP)) ) );
 
-  Qregs[37] := New(PBuf,Load(INIname));
-  Qregs[Current] := New(PBuf,Init(DefaultSize));
+  Qregs[37] := New(PTextFileBuffer,Load(INIname));
+  Qregs[Current] := New(PTextFileBuffer,Init(DefaultSize));
 
   Done := False;
 
