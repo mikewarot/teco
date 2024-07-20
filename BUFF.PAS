@@ -480,7 +480,7 @@ Var
   end;
 
 Begin
-  PointerChar := 'Û';
+  PointerChar := '^';
   TempNum     := 0;
   ErrorFlag   := 0;
 End.

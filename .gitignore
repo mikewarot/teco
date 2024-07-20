@@ -2,6 +2,8 @@
 *.zip
 *.xl*
 *.csv
+*.o
+*.ppu
 backup/*
 lib/*
 test/*
