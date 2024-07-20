@@ -1,7 +1,7 @@
 TECO/2 Implementation Details, etc.
 
-Last Update  : January 3, 2021
-Last Version : 1.07 Alpha
+Last Update  : July 19, 2024
+Last Version : 1.08 Alpha
 Author       : Michael Warot                  
 
 Email : chezmike<at>gmail<dot>com
@@ -9,7 +9,7 @@ Email : chezmike<at>gmail<dot>com
 
  ***************************  LEGAL STUFF *******************************
 
-Copyright (C) 1989-2021 Michael Warot, all rights reserved.
+Copyright (C) 1989-2024 Michael Warot, all rights reserved.
 Permission to use and distribute this program for NON-COMMERCIAL use
 is hereby granted, providing NO FEES are charged, and the package is
 distrubuted complete, without modification.
@@ -102,6 +102,8 @@ Numeric quantities:
   Z  - end position of buffer, also count of characters in buffer
   .  - Current position in the buffer
   H  - wHole buffer, equivalent to B,Z
+  
+  Note that math operators below are INFIX,  i.e.   7+2=~$$  will print 9
 
   +  - Addition
   -  - Subtraction
@@ -217,6 +219,8 @@ Command list:
                 at position n. If n is out of bounds, a -1 is returned.
 
   :Qq         - Push the number of characters in Q-register q.
+  
+  nUq         - Set the numeric value of Q register q to n
 
   [:][n|range]Xq
               - Like Type, but results replace contents of q-register
@@ -347,3 +351,9 @@ Version 1.07 Alpha - 01/03/2021 - MAW
 
   Hack code enough to get it working in Windows 10, 64 Bit, under Free Pascal 3.2
   Remove old phone number, address, etc.
+  
+Version 1.08 Alpha - 07/19/2024 - MAW
+ 
+  Fix a bug - nUq  didn't store n in the numeric Q register q-register
+  Noticed when watching https://www.youtube.com/watch?v=GvxZ7wfKj8E and I couldn't follow along
+  

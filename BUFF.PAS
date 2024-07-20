@@ -9,7 +9,7 @@ Interface
 Uses
   MyObj,DOS;
 Const
-  MaxBlockSize = $4000;  { It's small while still in development, to force
+  MaxBlockSize = $1000;  { It's small while still in development, to force
                            out bugs that pop up around the limits on size }
 
   Margin       = $0100;  { Amount added to a re-size operation to keep it

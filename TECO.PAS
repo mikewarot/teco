@@ -78,7 +78,7 @@ Uses
 Const
   ESC = #27;
   CrLf           : Array[0..1] of Char = #13#10;
-  Version        = '1.07 alpha';
+  Version        = '1.08 alpha';
   ProgName       = 'TECO/2';
 
   DefaultSize    = 1000;
