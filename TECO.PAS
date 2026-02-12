@@ -515,6 +515,7 @@ begin
 { Extended commands }
       'E'       : Begin
                     X := cmd^.ThisChar;
+                    WriteLn('Extended command: E',X);
                     cmd^.Move(+1);
                     Case UpCase(X) of
                       'B'  : if GetStringParam(Cmd,P1,S1) then
