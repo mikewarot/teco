@@ -565,7 +565,10 @@ begin
                                Data^.AssignWrite(S);
                              end;
                       'X'  : Done := True;
-                      '!'  : Compile_And_Execute(Cmd,Data);
+                      '!'  : begin
+                               WriteLn('Error: E! command not implemented.');
+                               Done := True;
+                             end;
                     else
                       k := qnum(X);
                       if Stack.Empty then Stack.Push(Flags[k])
