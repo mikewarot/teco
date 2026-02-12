@@ -154,7 +154,7 @@ This document catalogs the features documented in TECO-11.REF and identifies whi
 - **m,nXq** - Extract range to Q-register ✓
 - **nUq** - Store numeric value ✓
 
-### ❌ Missing (3/11)
+### ❌ Missing (4/11)
 - **m,nUq** - Store two values (equivalent to nUqm)
 - **n%q** - Add to numeric Q-register (returns new value)
 - **]q** - Pop from Q-register stack
