@@ -2,7 +2,9 @@ Program Teco;
 Uses
   Stacks,
   TextBuffers,
-  DOS,CRT;
+  DOS,CRT,
+  TecoSearch,
+  TecoEngine;
 Const
   ESC = #27;
   CrLf           : Array[0..1] of Char = #13#10;
@@ -58,7 +60,6 @@ Var
   Flags   : Array[0..37] of Longint;
   Qregs   : Array[0..37] of PTextFileBuffer;       { Q registers }
   Qnums   : Array[0..37] of Longint;    { Q registers, numeric part }
-  BitMask : Array[0..255] of Longint;   { Used in StringSearch }
 
   function CmdChar(cmd : PTextFileBuffer):Char;
   var
@@ -74,204 +75,24 @@ Var
   end;
 
 Function StringCompare(P1,P2 : Pointer):Longint;
-{
-  Checks for pattern p1 in p2
-}
-Var
-  Data,
-  Pattern   : PTextFileBuffer;
-  Old1,Old2 : TextPtr;
-  CaseSensitive : Boolean;
-  c         : char;
-  Match     : Boolean;
-  Size      : Longint;
 Begin
-  Pattern := PTextFileBuffer(P1);
-  Data    := PTextFileBuffer(P2);
-  CaseSensitive := (Flags[13] AND 1) <> 0;
-  Match := True;
-  Old1  := Pattern^.WhereAt;
-  Old2  := Data^.WhereAt;
-  While (NOT Pattern^.AtEnd) And Match do
-    If (NOT Data^.AtEnd) then
-    begin
-      c := CmdChar(Pattern);
-      Case c of
-        ^X   : Data^.Move(+1);           { Match ANYTHING }
-      else
-        If CaseSensitive then
-        begin
-          If c = Data^.ThisChar then Data^.Move(+1)
-                                else Match := False;
-        end
-        else
-        begin
-          If UpCase(c) =
-             UpCase(Data^.ThisChar) then Data^.Move(+1)
-                                    else Match := False;
-        end; { if caseSensitive }
-      end; { case c }
-    end
-    else
-      Match := False;
-
-  if match then Size := Data^.WhereAt - Old2
-           else Size := 0;
-
-  Pattern^.JumpTo(Old1);       { Put the pointers back }
-  Data^.JumpTo(Old2);
-  StringCompare := Size;
+  StringCompare := TecoSearch.StringCompare(
+    PTextFileBuffer(P1),
+    PTextFileBuffer(P2),
+    (Flags[13] AND 1) <> 0
+  );
 End;
 
 
 
 
 Function StringSearch(Pattern,Data : PTextFileBuffer):Longint;
-{
-  A new, faster search engine.
-  ONLY GOES 31 characters!
-}
-Var
-  EndMask       : Longint;
-  X             : Longint;
-  CaseSensitive : Boolean;
-
-
-  procedure do_add;
-  var
-    c : char;
-
-  procedure add_char(ch : char);
-  var
-    j   : byte;
-    y   : longint;
-    ext : char;
-  begin
-    case ch of
-      ^Q      : begin                                { literal next char }
-                  ext := Pattern^.ThisChar;
-                  Pattern^.Move(+1);
-                  BitMask[Ord(ext)] := BitMask[Ord(ext)] OR X;
-                end;
-      ^X      : for j := 0 to 255 do                 { any character }
-                  BitMask[j] := BitMask[j] OR X;
-      ^S      : begin                                { separators    }
-                  for j :=   0 to  47 do
-                    BitMask[j] := BitMask[j] OR X;
-                  for j :=  58 to  64 do
-                    BitMask[j] := BitMask[j] OR X;
-                  for j :=  91 to  96 do
-                    BitMask[j] := BitMask[j] OR X;
-                  for j := 123 to 255 do
-                    BitMask[j] := BitMask[j] OR X;
-                end;
-      ^N      : begin                                { NOT anything }
-                  y := x;
-                  do_add;
-                  for j := 0 to 255 do
-                    BitMask[j] := BitMask[j] XOR Y;
-                end;
-      ^E      : begin
-                  ext := CmdChar(Pattern);
-                  case upcase(ext) of
-                    'A' : begin                              { Alpha }
-                            for j :=  65 to  90 do
-                              BitMask[j] := BitMask[j] OR X;
-                            for j :=  97 to 122 do
-                              BitMask[j] := BitMask[j] OR X;
-                          end;
-                    'B' : begin                              { separators }
-                            for j :=   0 to  47 do
-                              BitMask[j] := BitMask[j] OR X;
-                            for j :=  58 to  64 do
-                              BitMask[j] := BitMask[j] OR X;
-                            for j :=  91 to  96 do
-                              BitMask[j] := BitMask[j] OR X;
-                            for j := 123 to 255 do
-                              BitMask[j] := BitMask[j] OR X;
-                          end;
-                    'D' : for j := 48 to 57 do               { Digits }
-                            BitMask[j] := BitMask[j] OR X;
-                    'R' : begin
-                            for j := 48 to 57 do             { Digits+Alpha }
-                              BitMask[j] := BitMask[j] OR X;
-                            for j :=  65 to  90 do
-                              BitMask[j] := BitMask[j] OR X;
-                            for j :=  97 to 122 do
-                              BitMask[j] := BitMask[j] OR X;
-                          end;
-                    '[' : begin
-                            ext := CmdChar(Pattern);
-                            while (ext <> ']') and
-                                  (NOT Pattern^.AtEnd) do
-                            begin
-                              BitMask[ord(ext)] := BitMask[ord(ext)] OR X;
-                              ext := CmdChar(Pattern);
-                            end;
-                          end;
-
-                  end; { Case }
-                end; { ^E }
-
-      'A'..'Z',
-      'a'..'z': begin
-                  BitMask[ord(ch)] := BitMask[ord(ch)] OR X;
-                  If NOT CaseSensitive then
-                    BitMask[ord(ch) XOR $20] :=
-                    BitMask[ord(ch) XOR $20] OR X;
-                end;
-
-    else
-      BitMask[ord(ch)] := BitMask[ord(ch)] OR X;
-    end; { case }
-  end;
-
-  begin
-    c := CmdChar(Pattern);
-    add_char(c);
-  end;
-
-
-Var
-  i,j,count : Byte;
-  OldData   : TextPtr;
-  left      : longint;
-  c         : Char;
 Begin
-  FillChar(BitMask,SizeOf(BitMask),#0);
-  EndMask := -1;
-  OldData := Data^.WhereAt;
-  CaseSensitive := (Flags[13] AND 1) <> 0;
-  I := 0;
-  X := 1;
-  Count := 0;
-  While (NOT Pattern^.AtEnd) AND (I < 31) do
-  begin
-    Do_Add;
-    X := X shl 1;
-    EndMask := EndMask shl 1;
-    Inc(Count);
-  end;
-
-  X := 0;
-  Left := Data^.EndPtr - Data^.WhereAt;
-  If Left > 0 then
-  repeat
-    X := X OR 1;
-    X := (X AND BitMask[Ord(Data^.ThisChar)]) SHL 1;
-    Data^.Move(+1);
-    Dec(Left);
-  until (Left<=0) OR ( (X and EndMask) <> 0);
-
-  if (X and EndMask <> 0) then
-  begin
-    StringSearch := Count;
-  end
-  else
-  begin
-    Data^.JumpTo(OldData);
-    StringSearch := 0;
-  end;
+  StringSearch := TecoSearch.StringSearch(
+    Pattern,
+    Data,
+    (Flags[13] AND 1) <> 0
+  );
 End;
 
 Procedure Compile_And_Execute(Var Cmd, Data : PTextFileBuffer);
@@ -939,13 +760,11 @@ begin
   end;
 end; { Execute() }
 
-procedure GetCommand(var cmd : PTextFileBuffer);
+procedure GetCommand(var engine: TTecoEngine; var cmd : PTextFileBuffer);
 var
   C,X,Last  : KeyStroke;
 begin
-  Stack.Clear;
-  LoopStack.Clear;
-  QStack.Clear;
+  engine.Reset;
 
   c := GetKey;
   case C.ascii of
@@ -987,6 +806,7 @@ Var
   CommandP  : String;
   ExeName,
   IniName   : PathStr;
+  Engine    : TTecoEngine;
 
   D: DirStr;
   N: NameStr;
@@ -1001,8 +821,7 @@ Begin
   E :='.INI';
   INIname := D + N + E;
 
-  FillChar(Flags,SizeOf(Flags),#0);
-  FillChar(Qregs,Sizeof(Qregs),#0);
+  Engine := TTecoEngine.Create(DefaultSize);
 
 //  CommandP := Ptr(PrefixSeg,$80);
   CommandP := '';
@@ -1015,34 +834,23 @@ Begin
 
   Current   := 0;
 
-  Stack.Init;
-  LoopStack.Init;
-  QStack.Init;
+  Engine.Qregs[11] := PTextFileBuffer(New(PTextBuffer,Cpy(@CommandP[1],Length(CommandP)) ) );
 
-  Qregs[11] := PTextFileBuffer(New(PTextBuffer,Cpy(@CommandP[1],Length(CommandP)) ) );
+  Engine.Qregs[37] := New(PTextFileBuffer,Load(INIname));
+  Engine.Qregs[Current] := New(PTextFileBuffer,Init(DefaultSize));
 
-  Qregs[37] := New(PTextFileBuffer,Load(INIname));
-  Qregs[Current] := New(PTextFileBuffer,Init(DefaultSize));
+  Engine.Done := False;
 
-  Done := False;
-
-  Execute(Qregs[37],Qregs[Current]);
-  While (Qregs[37] <> nil) AND (Qregs[current] <> nil) AND (Not Done) do
+  Engine.Execute(Engine.Qregs[37],Engine.Qregs[Current]);
+  While (Engine.Qregs[37] <> nil) AND (Engine.Qregs[current] <> nil) AND (Not Engine.Done) do
   begin
     WriteLn;
-    If Qregs[36] <> nil then
-      Execute(Qregs[36],Qregs[Current]);  { Z is now the "Prompt" macro }
+    If Engine.Qregs[36] <> nil then
+      Engine.Execute(Engine.Qregs[36],Engine.Qregs[Current]);  { Z is now the "Prompt" macro }
 
-    GetCommand(Qregs[37]);
+    GetCommand(Engine, Engine.Qregs[37]);
     WriteLn;
-    Execute(Qregs[37],Qregs[Current]);
+    Engine.Execute(Engine.Qregs[37],Engine.Qregs[Current]);
   end;
-
-  For i := 0 to 37 do
-    if Qregs[i] <> nil then
-      Qregs[i]^.Done;
-
-  Stack.Done;
-  LoopStack.Done;
-  QStack.Done;
+  Engine.Free;
 End.
