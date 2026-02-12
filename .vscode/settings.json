@@ -1,0 +1,17 @@
+{
+  "cSpell.enabled": true,
+  "cSpell.language": "en",
+  "cSpell.enabledLanguageIds": [
+    "markdown",
+    "plaintext"
+  ],
+  "cSpell.diagnosticLevel": "Hint",
+  "cSpell.ignorePaths": [
+    "lib/**",
+    "**/*.ppu",
+    "**/*.compiled",
+    "**/*.lpi",
+    "**/*.lps",
+    "**/*.pas"
+  ]
+}
