@@ -4,6 +4,7 @@
 *.csv
 *.o
 *.ppu
+fp.*
 backup/*
 lib/*
 test/*
